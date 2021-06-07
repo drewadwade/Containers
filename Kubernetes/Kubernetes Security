@@ -1,0 +1,444 @@
+most K8s restrictions map to underlying Docker constraints
+
+Audit all workloads running in a cluster for hardening steps
+	kubeaudit all 			- uses ~/.kube/config by default
+
+Statically audit manifests before applying to cluster with kubesec (github/om/controlplaneio/kubesec)
+	docker run -i kubesec/kubesec:512c5e3 scan /dev/stdin < /path/to/manifest/file.yml
+
+Don't mount Service Tokens where not needed
+	automountServiceAccountToken: false		
+		can be set at pod or service account levels
+	can also disable admissions controller (service that injects token) - could be disruptive
+
+Avoid using sensitive environment variables
+	created in every container
+
+K8s does not enable seccomp by default
+
+K8s DNS makes all pods discoverable by label, and there's no way to shut it down. Likely not a big deal for a single-tenant cluster, but not good for a multi-tenant cluster.
+
+Restrict access to Cloud Metadata Services
+
+Will fail silently:
+  PSP without Admissions Controller
+  NetworkPolicy without CNI that can accept and process policies as configuration
+
+securityContext:
+	manage capabilities, readonly fs, runAsUser, runAsNonRoot, etc
+	don't set `privileged=true`!
+	drop ALL capabilities, add back only needed ones
+	allowPrivilegeEscalation: false
+	imageTag - images should have specified tag/version
+		high-security - can specify SHA hash of desired image
+	AppArmor - only on by default in Docker-based installs
+		use metadata label to specify custom AppArmor profile instead
+			container.apparmor.security.beta.kubernetes.io/<container_name>: {unconfined, runtime/default, localhost/<profile>}
+	Seccomp - K8s disables Docker's default policy
+		use metadata annotation to enable
+			annotations:
+				container.security.alpha.kubernetes.io/<container_name>: "runtime/default"
+
+podSecurityContext:
+	defining securityContext at pod level
+	securityContext will override podSecurityContext
+
+set resource limits in container specifications
+	spec: 
+		containers:
+			- name: <container_name>
+			  image: <image_name>
+			  resources: 
+			  	limits:						
+			  		memory: 600Mi				#if container tries to take more than 600M RAM, kill it
+			  		cpu: 1						#if container tries to take more than 1 CPU, throttle it
+			  	requests:			
+			  		memory: 300Mi				#don't deploy to any node without >= 1/2 CPU (500 milliCPUs)
+			  		cpu: 500m					#don't deploy to any node without >= 1/2 CPU (500 milliCPUs)
+
+	can set Resource Quota for a namespace (e.g. for diff teams)
+		kind: ResourceQuota
+		spec:
+			hard:
+				requests.memory 3Gi
+				limits.memory 6Gi
+
+Implement Network Policy
+	enabled by default, but default is Allow All
+
+	example web deny policy
+		web-deny.yaml
+			kind: NetworkPolicy
+			apiVersion: networking.k8s.io/v1
+			metadata: 
+			  name: web-deny-all
+			spec:
+			  podSelector:
+			    matchLabels:
+			      app: web
+			  ingress: []
+
+    apply policy
+    	kubectl apply -f /path/to/web-deny.yml
+
+    scaling becomes very complex
+    some CNIs (Calico, Cilium) offer additional capabilities for network traffic mgmt
+    some cloud providers (AWS, Azure) also have specific FW capabilities
+    good animated illustrated examples of netpol recipies
+    	github.com/ahmetb/kubernetes-network-policy-recipes
+
+    useful for blocking control plane access, AWS metadata access
+
+
+Check Service Account Permissions
+	often the default service account is given too many rights
+		new pods will get default service account by default
+
+K8s Authentication
+	Inbuilt Authentication options
+		all generally terrible - certs is worst
+		
+		static password - plain text creds in a file on the host node
+		static token - plain text creds in a file on the host node
+		client certificates - cannot be revoked!
+	
+	Outside options
+		best option is generally OIDC integration with external service 
+			KeyCloak, DEX, IAM in cloud
+	
+		OpenID Connect Tokens
+		API Webhook Tokens
+		Authenticating Proxy
+		Keystone Password (OpenStack)
+	
+	NOTE: no user object will show up from kubectl api-resources
+			but users are understood by K8s RBAC for authorisation
+
+	Basic/Token Auth
+		requires restart of API server to change
+		creds held in the clear on disk
+			create creds file
+				/etc/kubernetes/pki/<filename>.csv			
+					password,user_name,user_id,user_groups
+						e.g. - mypass,user1,user1,"system:masters"
+			tell K8s where to look for creds
+				nano /etc/kubernetes/manifests/kube-apiserver.yaml 		****use nano, not vi, to modify****
+				add to spec:containers:command:
+					- --basic-auth-file=/etc/kubernetes/pki/<filename>.csv
+			test authentication
+				curl -sk --user user1:mypass https://127.1:40000/api/...
+
+		static token is similar, just token instead of user/pass
+
+	Client Certificates
+		NOT PREFERABLE TO BASIC AUTH!
+
+		signed by main K8s CA
+		user and group encoded into cert (as "Subject=CN = username, O = groupname")
+		encoded into .kube/condfig files for user auth
+		associate user with cert and test
+			kubectl config set-credentials username --client-certificate=/path/to/certs/mycert.crt --client-key=/path/to/keys/mykey.key --embed-certs=true
+			kubectl config set-context username@clustername --cluster=clustername --user=username
+			kubectx username@clustername		#kubectx changes context to user
+			kubectl get pod 			#should fail (Forbidden) if user not given permissions
+		use cert with curl
+			curl -sk --cert mycert.crt --key mykey.key https://127.1:40000/api/...
+
+		K8s does not support cert revocation! 
+			default cert lifetime is 10 years
+			can't revoke cert-based creds
+		access to CA key file provides access to whole cluster for life of key (10y by default)
+			check repos for these
+		can't disable CA - required for component to component authentication
+		can remove all of the authorisation rights for the user, but poor workaround
+			would still have system auth rights, just not additional rights
+		cluster admin cert generated by default and placed on every install 
+			/etc/kubernetes/admin.conf
+			can disable default cluster admin cert generation with setting during cluster creation
+		less risk in managed K8s - EKS, etc manages the CA key
+
+
+K8s Authorisation
+	AlwaysAllow - bad
+	Attribute-based Access Control - static file on API server, needs reboots for updates
+	RBAC - current main option in K8s
+	Webhook - allows delegation of authorisation decisions to external service
+
+	K8s rights are additive (if in ABAC or RBAC or Webhook, rights will be given)
+		only use one source of authorisation controls
+
+	K8s RBAC
+		roles describing set of permissions to resource
+		rolebindings to bind role to subject
+		subjects
+			Users
+			Service accounts
+			Groups (of users)
+		resource scopes
+			specific namespace
+			cluster-wide
+
+		builtin roles
+			almost all start with "system:"
+			used to provide rights to service accounts
+			some generic roles (e.g. cluster-admin)
+				users should not be added to cluster-admin
+
+		assigning rights
+			ClusterRoleBinding -> ClusterRole = rights assigned at cluster level
+			RoleBinding -> Role = rights assigned to one namespace
+			RoleBinding -> ClusterRole = rights assigned to one namespace
+				eg. create PodReaders clusterRole which works for any pods
+					RoleBind the PodReaders role to a set of devs for one particular namespace
+					only need to create one role, but can apply it in limited fashion in specific namespaces
+
+		List all clusterRoles
+			kubectl get clusterroles
+			kubectl get clusterroles -o yaml
+
+		List all clusterRoleBindings
+			kubectl get clusterrolebindings
+			kubectl get clusterrolebindings -o yaml
+
+		Bind roles to subjects
+			kubectl create clusterrolebinding <binding_name> --clusterrole=<cluster_role> --<subject>=<subject_name>
+
+		Read-only access can be dangerous 
+			esp. cluster-wide ro
+			e.g. GET on secrets
+
+		Allowing pod creation leads to privesc through various routes
+			can create privileged Docker containers and breakout to node
+			risks even with PSP enabled
+
+		Allowing impersonation rights 
+
+		Always be careful when applying RBAC rights to clusters as part of product installation
+			esp. 3rd-party intalls - sim to dangers of curl-bashing
+			install may do things like bind default service account to cluster-admin
+
+Manual Permission Auditing
+	Get members of clusterroles (sort of)
+		kubectl get clusterrole cluster-admin -o yaml
+		kubectl get clusterrolebinding cluster-admin -o yaml
+		still won't show mention of users
+
+	Check permissions for current user
+		kubectl auth can-i <kubectl_command>
+			e.g. kubectl auth can-i get secrets
+	Check permissions for other users/subjects
+		kubectl auth can-i --as <subject> <kubectl_command>
+		if running as cluster-admin, will return yes regardless (rights is *)
+			`can-i get donuts` will return error but true
+
+	List all permissions for current user
+		kubectl auth can-i --list
+	List all permissions for other users/subjects
+		kubectl auth can-i --as <subject> --list
+
+Automated Permission Auditing
+	rakkess (github.com/corneliusweig/rakkess)	
+		matrix of resources
+		show all resources and permissions
+			rakkess 			
+		show resource access for specific service account
+			rakkess	--sa <service_acount_name>
+	kubectl-who-can (github.com/aquasecurity/kubectl-who-can)
+		which users can do something
+			kubectl-who-can <kubectl_command>
+				e.g. kubectl-who-can get secrets
+				e.g. kubectl-who-can create pods
+		look for nonstandard bindings and investigate those
+		useful for privesc
+			can spot accounts with more access
+				e.g. system:controller:clusterrole-aggregation-controller
+					service account with admin level rights 
+						used to be cluster-admin
+						now can escalate to cluster-admin
+			can see who has get secrets permission
+				accesss to the service token of above would effectively allow cluster-admin rights
+
+	rback (github.com/mhausenblas/rback)
+		visualisation of RBAC rules
+			rback | dot -Tpng > /tmp/rback.png
+		may be broken for recent K8s
+
+
+RBAC Dangers
+	Avoid use of wildcard permissions (*)
+	cluster-wide permissions for individuals
+		devs should be limited to a specific namespace
+	users can do dangerous things 
+		get secrets, create pods, etc.
+
+
+Admission Controllers
+	step after authn and authz
+	can modify workloads before launch or block them
+	default set of admission controllers 
+		e.g. Service Account
+		full list at kubernetes.io/docs/reference/access-authn-authz/admission-controllers
+	types
+		Validating - check requests passed to API (e.g. for resource limits)
+		Mutating - modify requests before passing along
+	Useful controllers
+		AlwaysPullImages
+			forces CRI to pull a container image each time it is launched
+			useful in multi-tenant environments
+		ImagePolicyWebhook
+			specify external service that will review images used
+		MutatingAdmissionWebhook
+			specify an external service that will review and modify k8s objects before they are created
+		ValidatingAdmissionWebhook 
+			specify an external service that will review and potentially block the creation of k8s objects
+		NodeRestriction 
+			restricts what the Kubelet credentials are allowed to do
+		PodSecurityPolicy
+			restricts what pod security contexts can be configured
+	Additional controllers can be enabled from list from K8s
+
+	3rd Party controllers
+		OPA Gatekeeper
+			policy-based control for resources (K8s and more)
+			replacing PSP
+		Cruise K-Rail
+			sim OPA, focussed on security
+
+Pod Security Policy
+	limit what a container can do
+		stop "privileged"
+		stop mounting files from node
+		stop use of other host resources (e.g. Node network)
+	enable policies in /etc/kubernetes/manifests/kube-apiserver.yaml
+		must have at least one policy, or PSP will block all pod creation
+	will likely need multiple policies
+		some workloads will require extra rights (e.g. kube-proxy)	
+			need more privileged policy
+		best organised by namespace
+		need to ensure that entities creating pods have the correct rights
+	Workload Hierarchies
+		typically a cluster user won't directly create pods 
+			instead use replicasets, daemonsets, or deployments
+		actually controller accounts that will create pods
+			need rights to PSP, instead of users needing those rights directly
+		standard setup
+			lowPriv - widely associated - e.g. system:authenticated group
+			highPriv - associated with rolebinding at the kube-system level for controllers that need to create new pods
+			create lowPriv role 
+				kubectl create -f lowPrivClusterRole.yaml
+
+				lowPrivClusterRole.yaml
+					kind: ClusterRole
+					apiversion: rbac.authorization.k8s.io/v1
+					metadata: psp-lowpriv
+					rules:
+					- apiGroups:
+					  - extensions
+					  resources:
+					  - podsecuritypolicies
+					  resourceNames:
+					  - lowPriv
+					  verbs:
+					  - use
+					
+			create highPriv role 
+				kubectl create -f highPrivClusterRole.yaml
+
+				highPrivRole.yaml
+					kind: ClusterRole
+					apiversion: rbac.authorization.k8s.io/v1
+					metadata: psp-highpriv
+					rules:
+					- apiGroups:
+					  - extensions
+					  resources:
+					  - podsecuritypolicies
+					  resourceNames:
+					  - highPriv
+					  verbs:
+					  - use
+
+			bind low-privilege groups to lowPriv
+				kubectl create -f lowPrivClusterRoleBinding.yaml
+
+				lowPrivClusterRoleBinding.yaml
+					kind: ClusterRoleBinding
+					apiversion: rbac.authorization.k8s.io/v1
+					metadata: psp-default
+					subjects:
+					- kind: Group
+					  name: system:authenticated
+					roleRef:
+					  kind: ClusterRole
+					  name: psp-lowpriv
+					  apiGroup: rbac.authorization.k8s.io
+
+			bind high-privilege groups to highPriv
+				kubectl create -f highPrivRoleBinding.yaml
+
+				highPrivRoleBinding.yaml
+					kind: RoleBinding
+					apiversion: rbac.authorization.k8s.io/v1/v1beta1
+					metadata: 
+					  name: psp-permissive
+					  namespace: kube-system
+					subjects:
+					- kind: ServiceAccount
+					  name: daemon-set-controller
+					  namespace: kube-system
+					- kind: ServiceAccount
+					  name: replicaset-controller
+					  namespace: kube-system
+					- kind: ServiceAccount
+					  name: deployment-controller
+					  namespace: kube-system
+					roleRef:
+					  kind: ClusterRole
+					  name: psp-highpriv
+					  apiGroup: rbac.authorization.k8s.io
+
+			Effects
+				cluster-admin user can use any policy - e.g. can create privileged pods in any namespace
+				cluster-admin user can't properly create daemonsets requiring privileges except in kube-system namespace
+					in other namespaces it will actually create the daemonset itself, but no privileged pods within it
+				ordinary user can use highPriv PSP at all without rights to create daemonsets, deployments, or replicasets in kube-system
+
+	Auditing PSP
+		list policies
+			kubectl get psp
+				check the PSP YAML-based policy files
+		check PSP enabled
+			/etc/kubernetes/manifests/kube-apiserver.yaml
+				enable-admission-plugins=PodSecurityPolicy 
+
+Managed K8s
+	Security Concerns
+		Cloud Metadata Privesc
+			containers/pods can access cloud management services
+			SSRF/RCE can lead to cloud compromise
+		Patching against fast-moving target like K8s is hard
+			some providers back-port patches
+
+	Testing Logistics
+		may need bastion host or VPN or both
+		cloud login (IAM) is normally the preferred authentication method
+		generally accompanied by a cloud review
+			minimum of IAM review should be performed
+
+
+Helm 	
+	Charts - same possible security issues as Docker Hub
+		as of Nov 2019 - snyk.io reports 68% of stable Helm charts had bad images with High vulns
+
+	Tiller
+		process running inside the cluster
+		can be installed in any namespace (cluster-wide it's in kube-system by default)
+		
+		default install for Helm 2 installs Tiller as cluster-admin with no authentication
+
+		installing Helm without Tiller
+			helm init --client-only
+			
+		Tiller removed in Helm V3
+			makes use of Custom Resources (rights managed by RBAC) to store information
+

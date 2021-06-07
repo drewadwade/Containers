@@ -1,0 +1,46 @@
+Allows a set of Docker engine instances to work together
+	Networking - allowing containers on diff hosts to comm
+	Service Discovery - naming conventions so containers can find and reference one another
+	Scaling - easy commands to scale new instances
+	Fault Tolerance - loss of nodes should not disturb running services
+
+	Worker Nodes - run the workloads
+	Manager Nodes - can also run workloads, but primarily run swarm manager process
+	State Database - shared among manager nodes, state of swarm
+
+Swarm Security
+	uses own PKI for TLS cert creation to encrypt traffic 
+		by default creates a new Certificate Authority
+	first node acts as manager - provides token for additional nodes to join swarm as workers
+		docker swarm join --token <token> <manager_IP>:2377
+	
+	commands get run in swarm master:
+		list all swarm nodes
+			docker node ls
+		show swarm node info
+			docker node inspect <node_name>
+		create new containers in swarm cluster
+			docker service create --name <container_name> <image_name>
+				won't see or care where in the cluster it runs - just gives back a normal container ID
+		scale up from existing containers
+			docker service scale <container_name>=<number_of_instances_to_scale_to>
+
+Swarm Networking
+	default is "ingress" network - handles routing and traffic for services
+	can create multiple custom overlay networks to segregate traffic/containers
+		docker network create --driver=overlay <network_name>
+
+		10.0.0.X network by default - can be customised
+
+Secrets Management
+	creds and other secrets can be stored encrypted, then handed out when specific containers are launched
+	lock the swarm's secret store until a password is entered (to decrypt database)
+		--autolock 
+	keys can be rotated periodically
+
+Security Concerns
+	no ability to customise security profile
+		can't drop capabilities
+	no authorisation controls (just authentication)
+	overlay networks are flat (internally)
+	can volume mount directories from the host

@@ -1,0 +1,217 @@
+Attack Surface once you have a container in the cluster
+	all API ports
+	service tokens
+	other container network services
+	Linux kernel
+	cloud API Metadata services (cloud only)
+
+API remote - typically 443, 6443, 8443 - can be any (configurable on launch)
+
+Controller Manager - TCP 10251 
+	metrics and health info - unauth disclosure finding
+
+etcd - TCP 2379 - client communication
+	TCP 2380 - inter-cluster communication
+
+kubelet - TCP 10250, 10255 (older)
+	manages container runtime (usually Docker/containerd/CRI-O)
+
+kube-proxy - TCP 10256
+	handles mapping services to pods
+	forwards traffic to containers
+	health and metrics info
+
+Service tokens
+	JWT @ /var/run/secrets/kubernetes.io/serviceaccount/token
+	created by default in all containers
+	in all older versions and some newer versions, this is a cluster admin token
+
+K8s Environment Variables
+	created in every container
+	`env` will return location of API server:
+		KUBERNETES_PORT
+		KUBERNETES_PORT_443_TCP_ADDR
+		KUBERNETES_SERVICE_HOST
+
+Service Tokens + Environment Variables 
+	From a pod (not node!), list all other pods in a namespace
+		kubectl get pod -n kube-system
+
+When scanning, watch out for unauthenticated services 
+	esp MongoDB
+	sim internal network review
+
+Check Service Account Permissions
+	often the default service account is given too many rights
+		new pods will get default service account by default
+
+Identify servers with Basic Auth enabled
+	curl and pass creds to API server as above
+		403 - not enabled
+		401 - enabled, user/pass incorrect
+	if no account lockout, can bruteforce
+
+Check repos for CA key files
+	provides access to whole cluster for life of key (10y by default)
+
+Read-only access can still be dangerous 
+	esp. cluster-wide reda-only
+	e.g. GET on secrets
+		kubectl get secrets
+
+Check RBAC rights applied to clusters
+	esp. 3rd-party intalls - sim to dangers of curl-bashing
+	install may do things like bind default service account to cluster-admin
+
+Manual Permission Auditing
+	Get members of clusterroles (sort of)
+		kubectl get clusterrole cluster-admin -o yaml
+		kubectl get clusterrolebinding cluster-admin -o yaml
+		still won't show mention of users
+
+	Check permissions for current user
+		kubectl auth can-i <kubectl_command>
+			e.g. kubectl auth can-i get secrets
+	Check permissions for other users/subjects
+		kubectl auth can-i --as <subject> <kubectl_command>
+		if running as cluster-admin, will return yes regardless (rights is *)
+			`can-i get donuts` will return error but true
+
+	List all permissions for current user
+		kubectl auth can-i --list
+	List all permissions for other users/subjects
+		kubectl auth can-i --as <subject> --list
+
+Automated Permission Auditing
+	rakkess (github.com/corneliusweig/rakkess)	
+		matrix of resources
+		show all resources and permissions
+			rakkess 			
+		show resource access for specific service account
+			rakkess	--sa <service_acount_name>
+	kubectl-who-can (github.com/aquasecurity/kubectl-who-can)
+		which users can do something
+			kubectl-who-can <kubectl_command>
+				e.g. kubectl-who-can get secrets
+				e.g. kubectl-who-can create pods
+		look for nonstandard bindings and investigate those
+		useful for privesc
+			can spot accounts with more access
+				e.g. system:controller:clusterrole-aggregation-controller
+					service account with admin level rights 
+						used to be cluster-admin
+						now can escalate to cluster-admin
+			can see who has get secrets permission
+				accesss to the service token of above would effectively allow cluster-admin rights
+
+	rback (github.com/mhausenblas/rback)
+		visualisation of RBAC rules
+			rback | dot -Tpng > /tmp/rback.png
+		may be broken for recent K8s
+
+Custom Resources
+	list resources
+		kubectl api-resources
+
+finding Tiller
+	from a pod in the cluster:
+		dig tiller-deploy.kube-system.svc.cluster.local
+	if we get a response, then Tiller is installed cluster-wide in kube-system namespace
+
+Finding services running (to check for unauth access, etc)
+	kubectl svc --all-namespaces
+
+If you have a multi-tenant cluster, with tenants divided by namespace, they will still be able to brute-force discover one another's pods (especially if the namespace is something simple like the tenant company's name). They won't necessarily be able to access one another's pods, but there is some information leakage in the form of DNS entries. 
+
+
+K8s CIS Benchmarks
+	targets a kubeadm cluster as a baseline
+		take care applying to other forms of K8s
+	vendor-specific benchmarks coming out - EKS, GKE
+	can audit:
+		locally on cluster nodes - preferable
+		remotely via cluster API - not all functionality available
+
+	Kube-bench (github.com/aquasecurity/kube-bench)
+		sim Docker-Bench
+		audits locally - requires shell access to Master Node (therefore can't use with managed K8s)
+			customer could run it themselves and provide us the output
+		typically up to date with a relatively recent CIS benchmark version
+
+		on cluster master node run:
+			docker run --rm -v `pwd`:/host aquasec/kube-bench:latest install
+			docker cp kube-bench <node_name>:/
+			docker cp cfg/ <node_name>:/
+			docker exec -it <node_name> bash
+		in node shell run:
+			./kube-bench master
+
+		will pick up Low/Info findings like:
+			CIS 1.1.1  --anonymous-auth not set to false
+				should be disabled, but may break monitoring tools
+
+		"Warn" means it couldn't check this automatically
+
+
+K8s Config Testing Tools
+	github.com/raesene/TestingScipts/offline-cluster-analyzer.rb
+		run included kubectl commands to gathers information on most resources in JSON for offline analysis
+			no sensitive information (no secrets)
+			client could run kubectl command and provide output
+				can be very useful for scoping!
+		parse JSON with offline-cluster-analyzer.rb
+
+
+	Kind (github.com/kubernetes-sigs/kind)
+		K8s in Docker, sim DIND
+		creates K8s nodes inside Docker containers 
+		makes use of privileged containers for nested docker
+		not suitable for production use!
+			good for demos - easy to set up
+
+	KubiScan (github.com/cyberark/KubiScan)
+		looks for dangerous RBAC rights
+
+	kubeletctl (github.com/cyberark/kubeletctl)
+		automates curl testing against kubelet API
+			esp useful on unauthenticated kubelet API		 
+
+
+K8s PT Tools
+	kube-hunter (github.com/aquasecurity/kube-hunter)
+		git clone https://github.com/aquasecurity/kube-hunter.git
+		cd kube-hunter
+		sudo apt install python3-pip
+		pip3 install -r requirements.txt
+		./kube-hunter.py
+
+		will make calls out to Azure in process of testing
+
+
+AWS K8s
+	Initiate Connection
+		aws configure
+			provide Access Key ID, Secret Access Key, Region 
+		aws eks update-kubeconfig --name <EKS_resource_name> --profile <your_profile_name>
+
+	Collect Information
+		kubectl get po,svc,roles,rolebindings,clusterroles,clusterrolebindings,networkpolicies,psp,no,ns,pv,pvc,rc,crds,ds,deploy,rs,sts,ing --all-namespaces -o json > clusterconfig.json
+
+		./offline-cluster-analyzer.rb -i ./clusterconfig.json
+
+	List Images 
+		kubectl get pods --all-namespaces -o jsonpath="{..image}" | tr -s '[[:space:]]' '\n' | sort -u > pods
+
+	Check Images for CVEs
+		#! /bin/bash
+		cat ./pods | while read LINE; do
+		    trivy image $LINE >> images
+		done
+
+	Get helm/tiller version (from in a pod on the system)
+		helm --host tiller-deploy.kub-system.svc.cluster.local:44134 version
+
+
+
+
+

@@ -1,0 +1,857 @@
+Kubernetes
+
+Open source container orchestration tool developed by Google
+Containers ideal for microservices
+
+High Availability
+Scalability
+Disaster Recovery
+
+~/.kube/config (default location)
+	defines cluster you can access
+
+Check version of K8s 
+	kubectl get nodes
+
+Node
+	K8s Server
+	"Worker Nodes" and "Master Nodes" - see below
+	Worker Node contains multiple Pods
+
+
+Pod
+	smallest unit of K8s
+	abstraction over a container
+		technically 2+ containers
+			includes instance of "pause" container 
+				k8s.gcr.io/pause-amd64
+				for setup/teardown
+			may also want sidecar container
+				logging/monitoring
+				will apply to all containers in that namespace
+		running environment (not Docker-specific)
+	allows admin to only interact with K8s
+	usually contains a single application/container
+
+	each Pod gets own private IP address for communication with other Pods in the same node
+		new IP generated each time a Pod is started
+
+
+Service
+	permanent IP address that can be attached to a Pod
+	lifecycle of Pod and Service not connected
+		Service will stay even if Pod dies
+
+	Internal Service
+		just for connections within Node
+
+	External Service
+		opens pod to connections outside of Node (e.g. Internet)
+
+		Provides IP of Node and a port for the Pod
+
+
+Ingress
+	Acts as intermediary between Internet FQDN and Service IP
+
+
+ConfigMap:
+	configuration parameters for external, potentially changing, resources (e.g. db service endpoint external to Node)
+
+	Don't put credentials in ConfigMap:
+
+
+Secret:
+	sim ConfigMap, but used to store secret data
+	b64-encoded
+
+	not enabled by default
+
+	application can also access this for environment variables or as a properties file
+
+
+Volumes
+	persistent data storage
+	can be inside the Node or external (e.g. cloud storage)
+	K8s doesn't manage data persistence
+
+
+Cluster
+	contents of a Node or redundant/replica Nodes
+
+
+Redundancy
+	Replicate Pods between multiple Nodes
+		define blueprint of Pods and number of replicas req'd
+	Use the same Service for all Nodes
+		load balances
+
+Deployment:
+	blueprint for application Pods
+	layer of abstraction on top of Pods
+		easier to configure, deploy, and replicate Pods
+
+	Deployment is for stateless Pods only!
+		can't be used for db Pods - replicas would all need to access same shared data storage (they are stateful)
+
+
+StatefulSet
+	prevents data inconsistencies for multiple db Pods and other stateful applications
+
+	setup is complex - for this reason dbs are often hosted outside of the K8s cluster
+
+
+Worker Node
+	contains 1+ Pods
+	cluster servers that do the actual work
+	requires:
+		container runtime (e.g. containerd)
+		Kubelet
+			interacts with both container and Node
+			starts the Pod with a container inside
+		Kube proxy
+			forwards requests to/from Services
+			keeps requests within Node (reduces overhead)
+
+
+Master Node
+	manages Worker Nodes
+	requires:
+		API Server
+			gateway b/w admin client (e.g. kubectl) & cluster
+			does authentication
+		Scheduler
+			receives orders from API Server & Controller Mgr
+			only decides where a new Pod should be scheduled
+				based on current Node resource availability
+			actual scheduling is done by Kubelet inside Node
+		Controller Manager
+			detects cluster state changes (e.g. dead Pods)
+			sends order to Scheduler to react to changes
+				e.g. start up a new Pod
+		etcd
+			key value store of a cluster state (cluster brain)
+			stores the information required for API Server, Scheduler, and Controller Manager to work
+
+			does not store application data
+
+	often redundant itself with load balanced API Server and shared information for etcd
+
+
+Minikube
+	1-Node cluster running both master and worker processes
+	runs through VBox
+	local cluster setup for testing and development
+	kubectl is a dependency
+
+	Start up minikube cluster
+		minikube start --vm-driver=<hypervisor>
+
+
+Kubectl
+	CLI client for connection to K8s API Server
+	most powerful of the K8s clients
+
+	extensions available via plugin
+	no command completion by default
+		easy to set up in Linux (use WSL on Windows)
+			sudo kubectl completion bash > /etc/bash_completion.d/kubectl
+	kubectl proxy can expose K8s API to localhost
+		good for dev and prototyping
+
+	Get status of cluster Nodes
+		kubectl get nodes
+
+	Get client and server versions of K8s in cluster
+		kubectl version
+
+	Get status of Services
+		kubectl get service
+
+		should always see kubernetes service (default)
+
+	Get status of Pods
+		kubectl get pods
+
+	Get IP of Pods
+		kubectl get pod -o wide
+
+	Monitor progress of Pod creation
+		kubectl get pod --watch 
+
+	Get status of Deployments
+		kubectl get deployment
+
+	Get status of Replicas
+		kubectl get replicaset
+
+	Create a Pod (via Deployment)
+		kubectl create deployment <pod_name> --image=<image_name>
+
+		resulting pod will be named:
+			<deployment_name>-<replicaset_ID>-<pod_ID>
+
+	Configure a Deployment
+		kubectl edit deployment <deployment_name>
+
+		opens auto-generated config file wil defaults
+		save to save changes and update Pod(s)
+
+	Get Pod's application logs
+		kubectl logs <pod_name>
+
+	Get Pod's details and state changes
+		kubectl describe pod <pod_name>
+
+	Get Service's details and state changes
+		kubectl describe service <service_name>
+
+	Check for Secrets created
+		kubectl get secret
+
+	Open terminal of Pod
+		kubectl exec -it <pod_name> -- bin/bash
+
+	Delete Pod (via Deployment)
+		kubectl delete <deployment_name>
+
+	Use a K8s configuration file to customise a Deployment
+	& Update a Deployment from a config file
+		kubectl apply -f <config-file.yaml>
+
+		K8s knows whether to create or update the deployment
+
+	Get a K8s config file for a deployment in YAML format
+		kubectl get deployment <deployment_name> -o yaml > <config-file.yaml>
+
+		Need to remove status: sections before this can be used to apply as a new/updated configuration
+
+	port-forwarding
+		get direct access to a pod's services from a local machine
+			portforward cluster services to the machine you run kubectl on
+			kubectl port-forward pod/<pod_name> --address <destination_IP> <destination_port>:<pod_service_port>
+		good for getting screenshots
+
+	file copying
+		copy files out of a container
+			kubectl cp default/<pod_name>:/path/to/file/in/container /path/to/copy/destination
+		good for collecting evidence for reporting
+
+	verbosity
+		higher verbosity level is more information (max is 9, 7 is good)
+			e.g. kubectl get pod -v7
+
+	explain
+		get documentation on any API resources (find resources using kubectl api-resources)
+		can provide template of all available fields for a resource (sim PS help)
+			e.g. kubectl explain podsecuritypolicy
+		can drill down into object components
+			e.g. kubectl explain podsecuritypolicy.spec
+		can get additional information
+			e.g. kubectl explain podsecuritypolicy.spec --recursive 
+
+	krew
+		plugin manager for kubectl (sim pip)
+		plugins aren't validated for security - not entirely reliable
+
+
+
+
+K8s YAML Config File Example
+	#need to look up apiVersion for each different kind 
+	#of component created by config file
+	apiVersion: apps/v1
+	
+	#Kind of component to be created 
+	# e.g. deployment, service, secret, configmap, ...
+	kind: Deployment
+	
+	#Metadata of the component to be created
+	# e.g. deployment name, type, ...
+	metadata:
+	  name: deployment_name
+	  labels:
+		app: app_name
+	
+	#Specifications of the component to be created
+	spec:
+	  replicas: #_of_replicas
+	  selector:
+		matchLabels:
+		  app: app_name
+		template:
+		  metadata:
+			labels:
+			  app: app_name
+			spec:
+			  containers:
+			  - name: container_name
+			    image: image_name
+				ports:
+				- containerPort: 80
+				env:
+				- name: app_username
+					value: user_name
+				- name: app_password
+				  valueFrom: 
+				  	secretKeyRef: 
+				  		name: secret_name
+				  		key: secret_key
+				  	#must create secret first to have this reference
+				  	#this keeps the secret in K8s instead of in the code repo
+
+	#K8s compares desired state to current state 
+	#updated by K8s' etcd continuously
+	status:
+	  available replicas:
+	  conditions:
+			...
+
+
+K8s YAML Config Files
+	USE YAML ONLINE VALIDATOR TO ENSURE INDENTATION IS CORRECT
+	store config files in code or in git repo
+
+	Important Sections
+
+	Template:
+		config within config
+			applies to the component (e.g. Pod) created
+		blueprint for the component
+	
+	Metadata:
+		Labels:
+			any key-value pair 
+			Deployment connects all components with same label to one another
+
+	Specification:
+		Selectors:
+			Service connects to Deployment/Pods with same Label 
+
+	Ports for Deployments
+		containerPort:
+			port on the container/Pod that is open for the Service to connect to
+	Ports for Services
+		port:
+			port on the Service that is open for the container/Pod to connect to
+		targetPort:
+			The open port on the connected container/Pod that the Service needs to communicate with
+			- this is the "Endpoints" property from:
+				kubectl get service <service_name>
+
+	Can put multiple configurations in one file
+		separate then with a new line containing ---
+
+
+
+
+Example Configuration File for Secret:
+	apiVersion: v1
+	kind: Secret
+	metadata:
+	  name: <secret_name>
+	type: Opaque 	#Opaque is default for key-value pairs
+		#can also be TLS certificate and more
+	data:
+	  secret_key: b64_secret_value
+		#secret values must be b64-encoded
+
+	Just keeps secrets out of codebase
+
+
+Example Configruation File for External Service:
+	apiVersion: v1
+	kind: Service
+	metadata: 
+	  name: service_name
+	spec:
+	  selector:
+	  	app: app_name
+	  type: Loadbalancer  
+	  	#technically internal is load-balanced, too, but this is the name for the external service type - assigns an external IP
+	  ports:
+	    - protocol: TCP
+	      port: 8081
+	      targetPort: 8081 
+	      nodePort: 30001
+	      	#this is port where the service will be accesible on the Node's external IP
+	      	#must be between 30000 and 32767
+
+
+Namespace
+	logical unit for organising resources within a cluster
+	a virtual cluster within a cluster
+	
+	K8s provides 4 namespaces by default
+		default
+			where resources are created by default
+		kube-node-lease
+			info about node heartbeats - availability
+		kube-public
+			publicly accessible data
+			configmap contains cluster info
+			no authentication
+		kube-system
+			for Master & kubectl system processes
+			do not create or modify 
+
+	Get list of namespaces
+		kubectl get namespace
+
+	Get list pods in a namespace
+		kubectl get pod -n <namespace>
+
+	Create a namespace
+		kubectl create namespace <namespace_name>
+
+	Can also create namespaces through config files
+		apiVersion: v1
+		kind: ConfigMap
+		metadata: 
+		  name: config_map_name
+		  namespace: namespace_name
+		data:
+		  ...
+
+	Use Cases
+		Everything in one namespace
+			very confusing, poor overview
+		Group resources into their own namespaces
+			e.g. group all dbs together, all apps, etc
+		Conflicts: Many teams, same application
+			prevent deployments with same name but different configurations from overwriting one another
+		Resource Sharing: Staging and Development
+			can deploy a common resource once for use by both staging and development
+		Resource Sharing: Blue/Green Deployment
+			want 2+ different Production versions in use and may require access to common shared resources
+		Access and Resource Limits on Namespaces
+			for multiple teams - limit access to only the resources in the team's namespace
+			limit resources (CPU, RAM, storage) consumed by each namespace individually (resource quotas)
+
+	K8s does not recommend using addtional namespaces for smaller projects and fewer than 10 users
+
+	Can't access MOST resource from another Namespace
+	Each namespace must have its own:
+		ConfigMaps
+		Secrets
+	Can share:
+		Services
+			reference to a shared service: 
+				<service_name>.<namespace>
+	SOME components cannot be confined to a namespace
+		Volume
+		Node
+
+	List all resources bound to a namespace
+		kubectl api-resources --namespaced=true
+	List all resources NOT bound to a namespace
+		kubectl api-resources --namespaced=false
+
+	List all resources in a namespace
+		kubectl get all -n <namespace>
+
+	Get resource from specific namespace
+		kubectl get <resource_type> -n <namespace>
+
+	Create a resource in a sepcific namespace
+		kubectl apply -f config-file.yaml --namespace=<namespace>
+		OR
+		use namespace: under metadata: for resource within the config file
+		e.g. namespace: <namespace>
+
+	Change "Active" (default) namespace using kubens
+		kubens <namespace>
+
+		no longer need to provide -n <namespace> if working in one namespace other than K8s' "default" ns
+
+
+K8s Network Policy
+	network ACLs for clusters
+		aware of K8s labels instead of IP addresses
+	enabled by default, but default is Allow All
+
+	list current policies
+		kubectl get netpol
+
+	example web deny policy
+		web-deny.yaml
+			kind: NetworkPolicy
+			apiVersion: networking.k8s.io/v1
+			metadata: 
+			  name: web-deny-all
+			spec:
+			  podSelector:
+			    matchLabels:
+			      app: web
+			  ingress: []
+
+    apply policy
+    	kubectl apply -f /path/to/web-deny.yml
+
+    scaling becomes very complex
+    some CNIs (Calico, Cilium) offer additional capabilities for network traffic mgmt
+    some cloud providers (AWS, Azure) also have specific FW capabilities
+    good animated illustrated examples of netpol recipies
+    	github.com/ahmetb/kubernetes-network-policy-recipes
+
+
+Ingress
+	External Service provides IP only
+	Ingress allows for FQDN
+		also does not open the application itself externally
+	Requires an Ingress Controller Pod to process rules
+		e.g. K8s Nginx Ingress Controller
+			3rd-party implementations
+		evaluates all rules
+		manages redirections
+		entrypoint to cluster
+	Cloud deployment
+		Can place cloud load balancer in front of this
+			acts as entrypoint
+	Bare Metal deployment
+		Can deploy Ingress Controller internal to cluster or external
+		Need to configure an entrypoint
+			external Proxy Server (software or hardware)
+				separate server
+				public IP address and open ports
+				no direct access to K8s from Internet
+
+	Example Configuration File for Ingress:
+	
+	apiVersion: networking.k8s.io/v1beta1
+	kind: Ingress
+	metadata: 
+	  name: ingress_name
+	spec:
+	  rules:			#routing rules
+	  - host: app.com  	
+	  		#valid domain entrypoint 
+	  		#forwards traffic to serviceName
+	    http:			
+	    	#protocol for comm b/w Ingress & Internal Service 
+	    	#not related to protocol for connecting to Ingress
+	      paths:		#subdirectory path(s) for FQDN
+	      - backend:
+	          serviceName: internal_service_name 	
+	          		#destination of fwd
+	          servicePort: 8080 	#internal service port
+
+	Default Backend
+		default-http-backend:80
+		used to handle any request not mapped to a specific service
+		can customise error responses
+			create internal service with same name on port 80
+			create application that send the custom response
+
+	Ingress Use Cases
+		Multiple paths for same host
+			one domain, but many services
+				multiple path: entries (endpoints) under same paths: attribute
+		Multiple subdomains or domains
+			1+ domains and subdomains
+				multiple host: entries under rules: attribute
+
+	Configuring TLS Certificate
+		Allows HTTPS forwarding 
+		
+		In Ingress cluster create TLS secret
+			apiVersion: v1
+			kind: Secret
+			metadata:
+			  name: secret_name
+			  namespace: namespace
+			data:
+			  tls.crt: b64_encoded_cert
+			  tls.key: b64_encoded_key
+			type: kubernetes.io/tls
+
+		In Ingress config file's spec: section add
+			tls:
+			- hosts:
+			  - domainname.com
+			  secretName: secret_name
+
+
+Helm
+	1) Package Manager for K8s
+		package YAML files and distribute them in repos
+	  Helm Chart
+		package of YAML files for a complex setup
+		e.g. spin up Elastic Stack with all StatefulSet, ConfigMap, Secret, Services, K8s Users & permissions
+
+	  Find Helm Charts using Helm
+		helm search <package_name>
+
+	2) Templating Engine
+		create common blueprint for resource type
+			eg. for set of microservices
+		dynamic values in the YAML config file are replaced by placeholder values in template file
+			eg. name: {{ .Values.name }}
+				containers:
+					image: {{ .Values.container.image }}
+			.Values are defined in values.yaml or using --set
+				e.g. helm install -set version=2.0.0
+					see Inject values in templates below
+
+	3) Same applications across different environments
+		e.g. Dev, Staging, Prod
+		package up own chart 
+
+	4) Release Management
+		Helm Version 2
+			Helm Client 
+			Helm Server ("Tiller")
+			helm install command sends requests from client (helm CLI) to Tiller
+			Tiller stores copy of each configuration sent for future reference - versioning
+			helm upgrade <chart_name>
+				Changes are applied to current deployment instead of creating a new one
+			helm rollback <chart_name>
+				Rollback a bad upgrade
+			Tiller has too much power in cluster!!
+		Helm Version 3
+			No Tiller - just Helm binary
+
+
+Helm Charts
+	Example Helm Chart 
+	<chart_name>/ 		#top-level folder - name of chart
+		Chart.yaml  	#meta info about chart
+		values.yaml 	#values for template files
+		charts/			#folder for chart dependencies
+		templates/		#folder for templates
+		...				#other files (eg. Readme, License)
+
+	Create a chart
+		helm install <chart_name>
+
+	Inject values into template files
+		helm install --values=new-values.yaml <chart_name>
+
+		e.g. use diff template values for Dev and Prod
+		will use default template (from Chart) first
+		will only override with the provided values
+			values.yaml 		#original defined in chart
+				imageName: myapp
+				port: 8080
+			new-values.yaml 	#injected values
+				port: 8081
+			# resulting .Values object
+				imageName: myapp
+				port: 8081
+
+
+
+Volumes
+	for data persistence
+	a Pod can use multiple different storage types
+
+	Persistent Volume (PV)
+		cluster resource - interface to physical storage
+		needs actual physical storage from local disk or cloud
+			managed outside K8s - health, backup
+		created using K8s YAML file (eg. NFS backend)
+			apiVersion: v1
+			kind: PersistentVolume
+			metadata: 
+			  name: volume_name
+			spec:
+			  capacity:
+			    storage: 5Gi
+			  volumeMode: Filesystem
+			  accessModes:
+			    - ReadWriteOnce
+			  persistentVolumeReclaimPolicy: Recycle
+			  storageClassName: slow
+			  mountOptions:
+			    - hard
+			    - nfsvers=4.0
+			  nfs:
+			    path: /dir/path/on/nfs/server
+			    server: nfs_server_ip_address
+		other attributes for other types of storage
+			cloud, local, etc
+		NOT namespaced!
+
+		Local storage not ideal for data persistence
+			tied to a specific node
+			won't survive cluster crash		
+ 
+	Persistent Volume Claim (PVC)
+		also created using YAML file
+			kind: PersisitentVolumeClaim
+		Pods use the claim as a volume
+		Claim will make use of whatever available resource meets the requirements of the claim
+		must also use claim in Pods config spec: section
+			volumes:
+			  - name: volume_name
+			    persistentVolumeClaim:
+			      claimName: PVC_name
+		Volume mounted into Pod and its container(s)
+		PVC must be in same namespace as Pod using it
+		K8s Admin provisions PV storage resource
+		K8s User creates PVC claim to PV resource
+			easier for devs (users)
+
+	Storage Class
+		abstracts underlying storage provider
+		makes PV creation more efficient
+		provisions PVs dynamically when PVC claims it
+		also created using YAML file (eg. for AWS EBS)
+			apiVersion: storage.k8s.io/v1
+			kind: StorageClass
+			metadata:
+			  name: storage_class_name
+			provisioner: kubernetes.io/aws-ebs
+			parameters:
+			  type: io1
+			  opsPerGB: "10"
+			  fsType: ext4
+
+		claimed by PVC in YAML under spec:
+			storageClassName: storage_class_name
+
+	Special Local Volumes
+		ConfigMap
+		Secrets
+
+		1) Create ConfigMap and/or Secret component(s)
+		2) Mount that into the required Pods (Pod config)
+			spec:
+			  volumes:
+			    - name: config-dir
+			      configMap:
+			      	name: configMap_name
+
+
+StatefulSet
+	Stateful replica pods are not identical
+		can't be created/deleted at same time
+		can't be randomly addressed
+	StatefulSet maintains "sticky" identity for each pod
+		maintained across any re-scheduling
+		<statefulset_name>-<ordinal>
+			eg. mysql-0, mysql-1, mysql-2
+			first is Master
+			can't skip numbers in creation/recreation
+			must delete in reverse order
+	Defines a Master Pod and Worker Pods
+		eg. Master can r/w to db, Worker can ro
+		don't use the same physical storage
+			each have own replica of the storage
+			must continuously sync data
+				only Master can update data
+				Workers must know about each change
+			new Worker pods initially clone from other Workers
+		if all Pods die, then data would still be lost
+			so, use persistent storage
+	Configure PV for the StatefulSet
+		each Pod has data and Pod state (Master/Worker, etc)
+		makes sure PV gets attached to new pod if old one dies
+	Each Pod gets its own DNS endpoint as does loadbalancer service
+		Service -> svc1
+		Pods> mysql-0.svc1, mysql-1.svc1, mysql-2.svc1
+		When Pod restarts - IP changes, NOT name & endpoint
+	K8s Admin needs to
+		configure cloning and data sync
+		making remote storage available
+		managing and backing up storage
+	Stateful apps not ideal for containerised environments
+
+
+Services
+	K8s creates an Endpoint object for each Service
+		same name as the Service
+		keeps track of the Pods that are its members/endpoints
+	Service can have multiple ports open for different connections to its member Pods
+		ports must have name attribute in YAML if 2+ ports
+
+	ClusterIP
+		most common
+		default type
+		internal service representing an IP address
+		Service's selector attribute(s) and Pods' label attribute(s) define which Pods to fwd requests to
+		Service's targetPort attribute defines which Pod ports to fwd to
+		randomly selects replicas to loadbalance traffic
+
+	Headless
+		allows communication with a specific Pod among replicas
+		allows communication between replica Pods
+		useful for Stateful apps
+			eg. db Master Pod write
+			eg. db Worker node sync and clone
+		client needs to figure out IPs of each Pod
+			DNS lookup usually returns ClusterIP address
+			need DNS lookup to return Pod IPs instead
+				in Service spec:, set clusterIP: None
+
+	NodePort
+		creates static port on Worker Node
+		external requests come direct instead of Ingress
+		port defined in Service's nodePort attribute
+			must be between 30000 and 32767
+		auto-creates internal ClusterIP Service with open node defined in NodePort Service's port: attribute
+			internal Service present across all replica Worker Nodes
+		NOT Secure! - do not use for external connections!
+
+	LoadBalancer
+		internal ClusterIP service is made externally accessible via cloud provider's LoadBalancer
+		
+		each CSP has own LoadBalancer Service
+
+		auto-creates own NodePort and ClusterIP Services
+			Node port only communicates with LoadBalancer
+			defined in Service's spec: ports:
+				port: is ClusterIP port
+				nodePort: is Node's port
+
+K8s custom components - plugin interfaces for stuff not default to K8s
+
+	CRI - Container Runtime Interface - allows replacement of Docker with other runtimes
+
+	CNI - Container Network Interface - allow diff forms of networking
+
+	CSI - Container Storage Interface - allows diff storage backends for stateful workloads
+
+
+Kubernetes Ecosystem
+	Prometheus
+		monitoring tool - very popular
+		provides service IP and pod IPs (typically runs on port 80)
+
+	Jaeger
+		tracing/debugging app
+
+	Fluentd
+		logging framework
+		can read and write logs
+
+	K8s Secrets Management
+		Kubernetes Secrets objects (kubectl get secrets)
+		Hashicorp Vault 
+		CyberArk Conjur
+		Square Keywhiz
+		Pinterest Knox
+
+	K8s Development Tools
+		Visual Studio Code K8s plugin - maintained by MS
+			makes use of local kubeconfig file to get access to target clusters
+			doesn't require anything to be installed on the target clusters
+		Octant from VMWare
+			doesn't require anything to be installed on the target clusters
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

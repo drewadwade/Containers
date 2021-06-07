@@ -1,0 +1,12 @@
+autoremove a container on close
+	docker run --rm <image_name>
+
+show how much storage used
+	docker system df
+
+remove all stopped containers, unused networks, and "dangling" containers
+	docker system prune
+
+remove all stopped containers
+	docker container prune
+

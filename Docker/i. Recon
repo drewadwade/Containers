@@ -1,0 +1,144 @@
+***Docker is Linux processes configured to provide the illusion of isolation***
+anyone on Host can see all containers and what they're running
+
+
+Indicators you're in a container
+	look for /.dockerenv
+	look at PID 1 -> likely not init
+	look at ps -ef -> no hardware management processes
+
+
+use of non-official or Docker certified images
+	official tag visible in Docker Hub or in results of `docker search <image_name>`
+	offical images will also not be preceded by a user ID
+
+mind that images have been updated recently
+
+query container parameters (e.g. IP)
+	docker inspect -f "{{ .NetworkSettings.IPAddress }}" <container_name>
+
+Listen for events (create/delete/etc) on containerd
+	ctr --address /var/run/containerd/containerd.sock events
+
+
+Docker Daemon
+	by default it won't listen on the network at all, but ports can be exposed from containers to network
+		/etc/systemd/system/docker.service 
+			ExecStart will have -H fd:// section by default - listening local only, not network
+		/etc/docker/daemon.json
+			will have "hosts" line(s) defining its listener(s)
+
+	Attack Surface - Local
+		UNIX Socket
+			/var/run/docker.sock
+				default permissions is 660 (root:docker) - look for 777s
+				anyone who can access that file can access the containers
+
+			Linux 18.09+ - Docker client can also access engine instance via SSH
+				need to configure for key-based logins (or will be prompted for pass on each command)
+
+		containerd socket
+			/var/run/docker/libcontainerd/docker-containerd.sock 		for versions <18.09
+			/var/run/containerd/containerd.sock 						for versions 18.09+
+		
+		access to an account in the docker group would be most likely means of access
+
+		Windows - accessed via named pipe at \.\pipe\docker_engine
+
+	Attack Surface - Remote
+		TCP 2376 - HTTPS - network authentication based on client certificates
+			look for certs in .docker folder of dev machines
+			authentication allows full control of Docker daemon
+
+		TCP 2375 - HTTP - no auth - direct access to Docker API - easy RCE
+			remote test (runs ps) for access to daemon on 2375
+				docker -H tcp://<IP_address>:2375 ps
+
+			dump logs from a running container
+				curl --output - http://127.1:2375/containers/<ID>/logs?stdout=true
+
+Dockerfiles
+	USER <username> 
+		running as root is bad (not terrible) practice
+			LOW in regular env, MED in high security env
+		can use username or UID/GID - will need to create using RUN in Dockerfile
+		some commands may require root (e.g. package manager calls)
+
+	extract a Dockerfile from an existing Image
+		fine for standard image reviews but the recovered metadata will not tell whole story
+
+		manually
+			mkdir <output_dir> && cd <output_dir
+			docker save -o <output_file>.tar <image_name>
+			tar -xvf <output_file>.tar
+				each directory created is a layer
+					json is metadata for the layer - what was run
+			cat <layer>.json | jq
+				files copied in will be referred to using hash, not filename
+
+		automated
+			whaler - github.com/P3GL3G/Whaler
+
+				whaler -sV=<docker_API_version> <image_name>
+
+				parses out a Dockerfile for the image
+				tells you identity of user the image runs as 
+					look for Image User - User is root
+				will look for potential secrets
+				whaler is not well-supported
+
+			dive - github.com/wagoodman/dive
+
+				dive <image_name>
+
+				parses out a Dockerfile for the image
+
+.dockerignore - sim .gitignore
+
+watch out for secrets in environment variables (ENV)
+
+the "registry" image is a Docker reference image for a local registry
+	should not appear in prod
+
+`docker search` only works for Docker Hub
+	can curl remote registry API
+	show registry catalog
+		curl http://<registry_IP>:5000/v2/_catalog
+	show image manifest
+		curl http://<registry_IP>:5000/<image_name>
+	retrieve all image manifests from a registry
+		https://github.com/nccgroup/go-pillage-registries
+
+publishing images to Docker Hub requires docker login
+	stores creds in $HOME/.docker/config.json
+
+minimal container build (e.g., just necessary binary) may not have shell capability
+	may not be scannable w/ vuln scanner either
+
+mnt namespace
+	be careful of permissions (UID inside container may not be same as UID outside container)
+
+user namespace
+	will break things in K8s - recommend for high sec in pure Docker
+
+missing flag to prevent container gaining additional privileges allows privesc
+	docker run --security-opt:no-new-privileges:true <image_name>
+		can be set on container or at daemon level (for all containers)
+		not set by default!
+	no reason not to set it! easy hardening finding			
+
+check if seccomp is enabled
+	docker inspect
+		won't show anything if enabled
+		will show "seccomp=unconfined" under "SecurityOpt" if disabled
+	get container process PID using ps and check content of /proc/<PID>/status 
+		"Seccomp: 0" means unconfined (disabled)
+		"Seccomp: 2" means seccomp profile applied (enabled)
+
+Scanning Docker containers for vulnerabilities
+	clair
+		docker run -d --name db arminc/clair-db:<yesterday's_date_yyyy-mm-dd>
+		docker run -p 6060:6060 --link db:postgres -d --name clair arminc/clair-local-scan:v2.0.6
+		clair-scanner --clair="http://172.17.10.117:6060" --ip="172.17.10.117" <pulled_image_to_scan>
+	trivy
+

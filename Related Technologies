@@ -1,0 +1,116 @@
+gVisor (Google - gvisor.dev)
+	alternate container runtime
+		replaces runc component of the Docker stack (which runs the actual process)
+		gVisor, Kata
+	
+	reimplementation of Linux syscalls in Go
+		not all syscalls implemented
+	being used in Google Cloud Run
+
+	install runsc binary and direct daemon.json to it (req's Docker restart)
+
+	more restrictive sandbox
+		fewer default capabilities
+		does not make use of AppArmor
+		more resource intensive to sandbox each container
+
+	Networking
+		NAT - sim bridge - uses internal Hyper-V switch
+		Transparent - exposes containers to the same LAN as host (not supported in Azure)
+		Overlay - used in swarm mode and with orchestrators like K8s
+		L2bridge - sim Transparent but requires static address assignment and uses same MAC for all containers
+		L2tunnel - sim L2bridge - only for MS Cloud Stack
+
+Windows Containers
+
+	slightly slower and quite large images
+		Linux is OK with just one process being run, Windows needs more processes running all the time
+
+	Windows Containers - sim Docker - Windows container image on host using same kernel
+		process isolation 
+	Hyper-V Containers - uses Hyper-V Linux VMs for isolation but presents the same Docker-based interface 
+		Hyper-V isolation
+	LCoW - runs Linux Containers on Windows - also uses Hyper-V
+
+	Docker for Windows (Win 10)
+		Hyper-V and LCoW only (Windows Containers may be coming)
+
+	Docker Enterprise Edition (Win Server 2016+, much better in 2019)
+		free license
+
+	Isolation - via Windows job objects
+	Networking - via Hyper-V virtual switches
+	Layered filesytem - via new COW filesystem 
+
+	Find MS base images
+		docker search microsoft
+		based on nanoserver or windowsservercore
+
+	Pull MS base image - not from Docker Hub
+		docker pull mcr.microsoft.com/<image_name>
+
+	Security 
+		actually pretty good - better than Linux
+		MS recommends using Hyper-V containers (rather than process isolation) - rationale not clear
+			check isolation mode
+				docker inspect --format='{{.HostConfig.Isolation}}' <container_name>
+		no --privileged
+		no capability adding/dropping
+		roles restricted to ContainerUser or ContainerAdmin
+			can't run as root (host admin)
+			no mapping UIDs in and out of container
+		containers do mount volumes with "LocalSystem" privileges
+		internal NCC effort to build a version of DockerBench for Windows containers in progress
+		key areas for file permission checks
+			c:\programdata\Docker 		stores images and other config
+			c:\programdata\Docker\config\daemon.json 		daemon config
+			c:\windows\system32\containers 		stores .def file which controls privs for container
+				wsc.def stores default privs for containers
+		can expose on port 2375, but slightly less risk
+			can't do trivial breakout, can still mount host disk as volume
+
+RedHat's OpenShift
+	"Enterprise Kubernetes"
+
+	OpenShift 3
+		designed to run on top of RHEL or CentOS
+		since V3, uses K8s as a base
+		uses Docker for container runtime
+	OpenShift 4
+		designed to run on top of RHEL CoreOS
+		uses CRI-O for container runtime
+			still uses runc to actually launch containers
+			replaced Docker and containerd
+				"oc" tool - best used in CentOS
+				can still use kubectl
+				CLI has concept of logging in with username/password
+
+	deployment
+		on prem - OpenShift Container Platform (OCP)
+		AWS/Azure/IBM cloud - OpenShift Dedicated
+		OpenShift Container Engine - simpler version of OCP with fewer features
+
+	fixes some security concerns but has a very large attack surface (installs a lot of components)
+		container registry
+		GUI
+		Prometheus monitoring
+		...
+
+	"projects" instead of "namespaces" - essentially the same
+
+	additional resource types over K8s
+
+	AllowAllPasswordIdentityProvider
+		allows a user with any password to authenticate
+		configured by default on test clusters - no good for Prod!
+
+K3s
+	lightweight Kubernetes from the people who made Rancher
+
+
+Support Lifecycles
+	Docker CE - ~6mo
+	Docker EE - 2y
+	K8s - 9mo
+	OpenShift3 - until June 2022
+	OpenShift4 - 9-14mo

@@ -1,0 +1,225 @@
+Docker Security Reviews can focus on:
+	Docker Engine config
+	Container breakout
+	Docker image reviews
+
+vuln in Host or in one container accessing Host can affect all containers on that Host
+
+Do not use non-official or non-Docker-certified images
+	official tag visible in Docker Hub or in results of `docker search <image_name>`
+	offical images will also not be preceded by a user ID
+
+Mind that images have been updated recently
+	containers running on old Linux kernels	may be able to use Linux kernel privesc  
+		e.g. - DirtyCow, WaitID
+	still has to get past Seccomp and AppArmor
+		
+Container secrets (API keys, passwords for connected systems) should be put in at runtime using a secrets management tool 
+	e.g., K8s Secrets object
+
+Use the --no-new-privileges flag on all containers or at the daemon level
+
+CAP_NET_RAW capability should be dropped unless container needs access to raw network traffic
+	there are work-arounds for allowing Ping, if necessary
+
+If it can, the container shoudl be run with no capabilities at all
+
+Set resource limits
+	cgroups should be set (K8s does this by default) to reduce DoS risks
+
+Use a read-only file system
+	containers are meant to be ephemeral, should be read-only
+		can mount in temp filesystem for logs
+
+Where iptables is not in place, enable Userland Proxy
+
+Use Docker default bridge only with separate bridges for isolation
+
+Restrict access to root account
+	do not set root password 
+		cannot privesc to root without it
+	shell jail for low priv user
+		chsh -s /usr/sbin/nologin root
+
+Docker Daemon runs as root
+	standard and largely necessary
+		breaks port mapping & iptables if you remove root priv
+	Docker starting to move to rootless (standard user) daemon to run containers
+		docs.docker.com/engine/security/rootless
+		reduces consequences of compromised Docker install
+	be careful with untrusted Dockerfiles (e.g. from Jenkins server)
+	can safely recommend using the cloud's tool if cloud-hosted
+	can recommend building containers as non-root using various tools (still being refined)
+		RedHat buildah (github.com/containers/buildah)
+		Google Kaniko (github.com/GoogleContainerTools/kaniko)
+		Genuinetools img (github.com/genuinetools/img)
+		Docker Buildkit (github.com/moby/buildkit)
+	RedHat podman already runs rootless
+
+Prevent SUID exploits
+	docker run --security-opt=no-new-privileges <image_ID>
+
+Never run container in privileged mode
+	run as unprivileged user
+		docker run -u <username_or_userID> <image_ID> 
+	NOT
+		docker run --privileged
+
+Don't run containers as root
+
+Don't run containers with mounted docker.sock
+
+Restrict kernel capabilities
+	divides up root privileges to enable or disable
+	see capabilities man page for list
+
+	drop all, then add required capabilites
+	docker run --cap-drop all --cap-add <capability_name>
+
+Restrict access to filesystem
+	run container in read-only mode
+		docker run --read-only
+	use temporary readable directory
+		docker run --read-only --tmpfs <directory>
+
+Isolate container from other containers/networks
+	Bridge Docker network contains option
+		"com.docker.network.bridge.enable_icc": "true"
+	to enable Inter-Container Connection
+
+	Create new bridged network isolated from other containers
+	docker network create --driver bridge -o com.docker.network.bridge.enable_icc": "false" <network_name>
+
+	Can also configure subnets, IPv6, etc
+
+
+Docker Networking
+	default is not to listen on the network
+	Linux - accessed via Socket at /var/run/docker.sock
+		anyone who can access that file can access the containers - restrict permissions
+	Linux 18.09+ - Docker client can also access engine instance via SSH
+		need to configure for key-based logins (or will be prompted for pass on each command)
+	Windows - accessed via named pipe at \.\pipe\docker_engine
+
+	do not configured to listen on default TCP port	2375 for HTTP 
+		unauth and unencrypted
+		use	2376 for HTTPS instead, if required
+
+	can create multiple bridged networks to isolate from one another
+		user-defined bridge 
+			name resolution based on container name
+			recommended for production workloads
+
+	Docker MACVLAN networking doesn't work well - doesn't do DHCP
+	
+	Exposing ports to make them visible on network uses iptables rules - not good for K8s
+
+
+Docker Images
+	images should be reviewed for dangerous practices
+		do not "curl bash" - piping a curl from the Internet directly into a root shell to execute
+			curl http://site.com/install.sh | bash
+
+	don't RUN chown or chmod - bloats image
+		can chmod on host prior to build to set permissions
+
+	The ADD command is similar to COPY, but with additional features (unpacking archives, getting from URL)
+		not recommended
+
+	Use ENTRYPOINT over CMD for single purpose containers that should only run that command
+		can override ENTRYPOINT - e.g. to get shell
+
+	Use the USER tag (USER <username>) to assign a lower-priv user (containers run as root by default)
+		all subsequent commands will run as this user
+		can use username or UID/GID - will need to create using RUN in Dockerfile
+		NOTE: some commands may require root (e.g. package manager calls)
+			running as root is bad (not terrible) practice
+			makes file ownership complicated 
+
+	Make sure .dockerignore (sim .gitignore) is not exposed
+
+	Watch out for secrets in environment variables
+
+	the "registry" image is a Docker reference image for a local registry
+		should not appear in prod
+
+	Docker Hub now supports Personal Access Tokens and 2FA for user login
+
+	minimal builds can exclude shell capability, may not be scannable w/ vuln scanner
+
+	be careful of mnt namespace permissions 
+		UID inside container may not be same as UID outside container
+
+	pid namespace provides a separate process space and stops leakage of information in command lines
+
+	user namespace provides remapping of UIDs and GIDs
+		root in a container is not root on the host - important for security!! 
+		available from Docker 1.10+, but not enabled by default in Docker or K8s
+		recommend for high sec in pure Docker
+			will break things in K8s
+		
+		all container root users are translated to a single defined user
+			can be pre-created on host or Docker can create user account for this
+			enabled and defined in /etc/docker/daemon.json
+				{
+					"userns-remap": "default"
+				}
+			default for Docker is to remap all of the container root users to high UID host users
+			docker will no longer display previously downloaded images
+				will be accessible once user namespaces is disabled
+			docker is running as real root, but all container root processes are non-root
+			will need to set permissions for the new high-UID container root users
+			can define UIDs and UID ranges in configuring user namespaces
+
+	cgroup namespace isolates the cgroup information including resource metering and limiting
+		not enabled by default in Docker
+		CPU limiting will throttle over-hungry processes
+		Memory limiting will kill over-hungry processes	
+		PIDs limiting prevents "fork-bombs" that exhaust PIDs available and crash host
+			Docker does not set by default!
+
+Capabilities breaks up root abilities rather than providing full root permissions
+	can explicitly drop capabilities
+		docker run --cap-drop=<capabilitity> <image_name>
+
+		can still support Ping without NET_RAW
+			docker run --sysctl "net.ipv4.ping_group_range=0 1000000000" --cap-drop=NET_RAW <image_name>
+
+	may consider dropping all capabilities for specific processes or whole container
+		--cap-drop=all
+		effectively runnning as ordinary user
+
+	can also add back specific capabilities
+		--cap-drop=all --cap-add=<capability>
+
+	Docker has flag to prevent container gaining additional privileges 
+		docker run --security-opt:no-new-privileges:true <image_name>
+
+		can be set on container or at daemon level (for all containers)
+		not set by default!
+		no reason not to set it!
+
+
+Docker Bench 
+	reviews Docker install against CIS Benchmarks
+	github.com/docker/docker-bench-security 
+		docker-bench-security image 
+		can also just run as shell script available on same repo
+
+	docker run -it --net=host --pid=host --cap-add audit_control \
+		-e DOCKER_CONTENT_TRUST=$DOCKER_CONTENT_TRUST \
+		-v /var/lib:/var/lib \
+		-v /var/run/docker.sock:/var/run/docker.sock\
+		-v /usr/lib/systemd:/usr/lib/systemd \
+		-v /etc:/etc --label docker_bench_security \
+		docker/docker-bench-security
+
+
+	
+High-security environments 
+	implement AppArmor/SELinux profiles
+		defense in depth, but management overhead involved
+	enable Content Trust
+		Docker's feature for image signing
+		not very usable outside of specific enterprise deployments (poor for public repos)
+

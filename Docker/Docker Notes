@@ -1,0 +1,607 @@
+Docker
+
+Image - package of application, config, and dependencies
+
+Container 
+	layers of running images and virtual file system (Overlay File System)
+	small Linux base image at base
+		e.g. Alpine
+	port bound to it (access at localhost)
+
+	no data persistence in container
+		Docker Volumes required for persistent data
+
+	containers are just processes - anyone on Host can see all containers and what they're running
+
+	building single binary container
+		multi-stage build - build code without dev tools in final build
+			compile code
+			final image
+				scratch base image - no OS files
+
+		example Dockerfile
+			FROM golang:onbuild		#compile golang code
+			RUN mkdir /app
+			ADD . /app/
+			WORKDIR /app
+			RUN CGO_ENABLED=0 CGOOS=linux go build -a -installsuffix cgo -o main .
+
+			FROM scratch			#create final image
+			COPY --from=0 /app/main /main
+			CMD ["/main"]
+
+		minimal build may not have shell capability, may not be scannable w/ vuln scanner
+
+Docker Engine -> Dockerd/containerd -> runc
+	containerd-shim manages individual containers
+	containerd CLI is ctr
+
+Docker client is a Golang binary
+
+Alpine OS has many compatibility issues and is developed by small team (less time for security)
+	was popular in early days because Debian and Ubuntu images were quite large
+	Alpine image does not have BASH by default - uses /bin/ash
+
+
+
+
+
+
+List images
+	docker images
+
+List running containers
+	docker ps
+	docker container ls
+
+List all containers (incl. stopped)
+	docker ps -a
+
+Pull an image from Docker Hub
+	docker pull <image_name>:<version>
+
+Start a container (fg)
+	docker run <image_name>:<version>
+(pulls from Docker Hub if not present)
+
+Start a container in detached mode (bg)
+	docker run -d <image_name>:<version>
+
+Set a (non-random) container name on start
+	docker run --name <container_name>
+
+Stop a container
+	docker stop <container_ID>
+
+Restart a container
+	docker start <container_ID>
+
+Set host port binding on container start
+	docker run -p <host_port>:<container_port> <image_name>:<version>
+
+View logs from container
+	docker logs <container_ID>
+	docker logs <container_name>
+
+See information about Docker daemon
+	docker info
+
+Run a command inside a container
+	docker exec <container_ID> <command>
+	docker exec <container_name> <command>
+Get interactive terminal of running container
+	docker exec -it <containter_ID> /bin/bash
+	docker exec -it <containter_name> /bin/bash
+may require /bin/sh or /bin/ash instead
+
+Run container with specific environment variable values (see image documentation)
+	docker run <image_name>:<version> -e <environment_variable>=<value>
+
+Run container directly with runc
+	export an image as a tarball
+		docker export $(docker create <image_name>) | tar --directory <dest_dir> -xvf -
+	create specification file for the image
+		runc spec
+	create container
+		sudo runc run <folder containing image export>
+	will not give the container an IP
+
+Delete a container
+	docker rm <container_ID>
+Must be stopped before deleting
+
+Drop out of container shell to host without shutting down container
+	Ctrl-PQ
+To return to shell
+ 	docker attach <container_ID>
+
+Show how much storage used
+	docker system df
+Remove all stopped containers, unused networks, and "dangling" containers
+	docker system prune
+Remove all stopped containers
+	docker container prune
+Autoremove container on close
+	docker run --rm <image_name>
+
+
+Overlay File System 
+	images consist of layers with resultin file system being their union
+	each hash listed during the docker pull operation is a line in the Dockerfile - another tarball'd layer
+
+	list all actions to create the image
+		docker history <image_name> 
+		docker history <image_name> --no-trunc
+
+	track container actions history
+		docker container diff hist
+
+	commit changes from a modified container to a new image
+		docker container commit hist <new_image_name>
+
+	chmod and chown bloat images because they effectively become lines that copy each file affected (w/ new perms)
+
+
+Docker Networks
+	Containers in same Docker Network can communicate with each other using just their container names as hostnames
+	default is not to listen on the network
+		acts in bridged mode with inter-container communication by default
+
+	List Docker Networks
+		docker network ls
+
+	Create new Docker Network
+		docker network create <network_name>
+
+	Run container in specific Docker Network
+		docker run <image_name>:<version> --net <network_name>
+
+	View Docker Network configuration
+		docker network inspect <network_name>
+
+
+	default Docker bridge networking
+		containers get own isolated network 
+		docker0 interface on host
+		Docker handles IP assignment
+		can create multiple bridged networks to isolate from one another
+			user-defined bridge 
+				name resolution based on container name
+				recommended for production workloads
+
+	Docker Host networking
+		removes isolation of network - attaches containers to host network
+			docker run --network=host <image_name>
+
+	Docker None networking
+		container isolated (localhost and loopback only)
+			docker run --network=none <image_name>
+
+	Docker MACVLAN networking
+		doesn't work well - doesn't do DHCP
+		binds as VLAN to host NIC
+		no need to forward ports, but does not attach to host network
+			docker network create -d macvlan --subnet=<net> --gateway=<gateway> -o parent=<iface> <network_name>
+
+	exposing ports to make visible on network
+		uses iptables rules to forward traffic from container port to host port - not good for K8s
+
+	assign container to specific network
+		docker run --network=<network_name> <image_name>
+
+	connecting container networks
+		from outside network
+			docker network connect <network_name> <container_name>
+		from inside network
+			docker attach <container_name>
+
+	overlay networks
+		mainly used in clustering tools (Docker Swarm, K8s)
+		run between multiple container hosts - all see flat LAN
+		channels between hosts can be encrypted, but typically are not (stability, performance issues)
+
+
+Docker Compose
+	script container config and startup
+	mapped into YAML files
+	automatically groups the containers created in YAML file in a Docker Network
+
+
+	EXAMPLE mongo-docker-compose.yaml
+	version:'3'		#docker-compose version
+	services:
+		mongodb:	#container name
+			image: mongo 	#docker image
+			ports: 
+			 - <host_port>:<container_port>
+			environment:
+			 - <env_variable>=<value>
+		mongo-express:	#next container
+			image:
+			ports:
+			environment:
+
+	Run a Docker Compose file
+		docker-compose -f <filename>.yaml up
+
+	Stop a Docker Compose file's containers
+		docker-compose -f <filename>.yaml down
+	(also removes created Docker Network)
+
+
+Dockerfile
+	create a Docker image from an application
+	each new app image is based on existing image
+	must be called "Dockerfile"
+
+	everything that affects a given set of files needs to stay on same line (using && and |)
+		each line is assigned to a "layer" of a "union filesystem"
+		cannot remove content from underlying layers (previous lines)
+
+	FROM <image_name>:<version>  
+		FROM sets base image eg. node for a JS app
+	ENV <env_variable>=<value>
+		usually best to define in compose.yaml
+	RUN mkdir -p /home/app 	
+		RUN executes any Linux command in container
+		can have multiple RUN commands
+	COPY <source> <destination>
+		COPY executes on the host machine to get app files
+		COPY files are owned as root 
+			can use COPY's --chown flag to modify, though
+				COPY --chown=username:username filename /dest_path		
+			don't RUN chown or chmod - bloats image
+			can chmod on host prior to build to set permissions
+	ADD <source> <destination> 
+		sim to COPY, but with additional features (unpacking archives, getting from URL)
+		not recommended
+	CMD ["node","/home/app/server.js"]
+		CMD is first command executed in container
+	ENTRYPOINT ["nikto.pl"]
+		sim CMD, only one CMD command
+		does accept parameters from docker run
+		use ENTRYPOINT over CMD for single purpose containers that should only run that command
+	USER <username>
+		assign a lower-priv user (containers run as root by default)
+		all subsequent commands will run as this user
+		can use username or UID/GID - will need to create using RUN in Dockerfile
+		some commands may require root (e.g. package manager calls)
+		running as root is bad practice, but makes file ownership less complicated 
+	LABEL
+		provides metadata about the image (e.g. version, maintainer)
+	WORKDIR
+		sets current directory inside the container
+	 	
+	save a Docker image to a tar archive for sharing
+		docker save <image_name> -o <filename>
+		docker load <filename> #start up the image elsewhere
+
+	create Docker image without Dockerfile
+		run base image, modify in shell, then commit to new image
+			docker commit <old_image_name> <new_image_name>
+
+	can allow Docker to pull from registry that does not have valid TLS cert
+		in /etc/docker/daemon.json
+			{"insecure-registries":["<registry_IP>:5000"]}
+		need to restart docker after
+
+	publishing images to Docker Hub requires docker login
+		Docker Hub now supports Personal Access Tokens and 2FA for user login
+
+	Build an image with tag
+		docker build -t <new_image_name>:<version> <path/to/Dockerfile>
+
+		tag req'd to push to remote registries (other than Docker Hub)
+		can tag afterwards
+			docker tag <new_image_name>:<version> <path/to/Dockerfile>
+
+	Delete an image (must stop and delete any containers created from it, first)
+		docker rmi <image_ID> #from `docker images`
+	Must delete image before you can rebuild it
+
+
+Docker Volumes
+	persisting data (database, stateful apps)
+	mounts host file system path to container's virtual file system path
+
+	Host Volume
+		docker run -v <host_path>:<container_path>
+
+	Anonymous Volume
+		docker run -v <container_path>
+		
+		Docker creates anonymous folder on host at:
+		Linux:
+		/var/lib/docker/volumes/<hash>/_data
+		Windows:
+		C:\ProgramData\docker\volumes\<hash>\_data
+		Mac:
+		/var/lib/docker/volumes/<hash>/_data
+			actually creates a Linux VM in background and stores docker info there
+			Access terminal in that VM using:
+				screen ~/Library/Containers/com.docker.docker/Data/com.docker.driver.amd64-linux/tty
+			Ctrl+a+k to kill terminal		
+
+	Named Volume - **best to use in production**
+		docker run -v <vol_name>:<container_path>
+		
+		same as Anonymous, but creates named volume folder on host
+		Linux:
+		/var/lib/docker/volumes/<vol_name>/_data
+		Windows:
+		C:\ProgramData\docker\volumes\<vol_name>\_data
+		Mac:
+		/var/lib/docker/volumes/<vol_name>/_data
+			
+
+	Docker Compose parameter usage
+		version:'3'		
+		services:
+			mongodb:
+				image: mongo
+				ports: 
+				 - 27017:27017
+				volumes:
+				 - <vol_name>:<container_path>
+				 	#all data in this volume (on the host) will be replicated in the container path provided on startup
+			mongo-express:	#next container
+				image:
+				ports:
+				environment:
+				volumes:
+		volumes:
+			<vol_name> 	#1+ container can access 
+
+
+Working with external data 
+	Mount a volume path (-v <host_dir>:<container_dir>)
+	 mkdir ~/volume_location
+	 docker run -v ~/volume_location:/container_dir <image_name> 
+  		container runs as root, so files created by container will be created as root
+
+  	Mount a bound volume
+  	 docker volume create volume_name
+  	 docker run -v volume_name:/container_dir <image_name>
+  	 	will also create volume of that name, if not already existing
+  	 docker volume inspect volume_name
+  	 	will show /var/lib/docker/volume/volume_name/_data
+
+  	Copy from/to container
+  	 cp <container_name>:/<container_path> ./
+
+
+Namespaces
+	provides a limited view of system resources accessible to a process
+		mnt, net, pid, ipc, uts, cgroup, user
+	Linux may use namespaces on its own for some systemd-run processes
+
+	time and kernel keyring are not namespaced
+		(time has been added to Linux kernel 5.6+, but isn't widely applied)
+
+	mnt - controls view of filesystem 
+		based on chroot
+
+	net - provides separate set of networking constructs for the namespaced process
+		interfaces, routing tables, iptables rules
+
+	pid - provides a separate process space
+		stops leakage of information in command lines
+		sudo unshare --fork -pid --mount-proc bash
+		this is essentially what Docker does - isolates the container's processes to a new PID namespace
+
+	user - provides remapping of UIDs and GIDs
+		root in a container is not root on the host - important for security!! 
+		available from Docker 1.10+, but not enabled by default in Docker or K8s
+		sudo --fork --pid --mount-proc -U -r bash
+
+		all container root users are translated to a single defined user
+			can be pre-created on host or Docker can create user account for this
+			enabled and defined in /etc/docker/daemon.json
+				{
+					"userns-remap": "default"
+				}
+			default for Docker is to remap all of the container root users to high UID host users
+			docker will no longer display previously downloaded images
+				will be accessible once user namespaces is disabled
+			docker is running as real root, but all container root processes are non-root
+			will need to set permissions for the new high-UID container root users
+			can define UIDs and UID ranges in configuring user namespaces
+
+	ipc - relevant for IPC communications
+
+	uts - isolates the hostname
+
+	cgroup - isolates the cgroup information - resource metering and limiting
+		memory, CPU, block I/O, network
+		not enabled by default in Docker
+
+		docker run --cpus=<number_of_cores> <image_name>
+			CPU limiting will throttle over-hungry processes
+
+		Memory limiting will kill over-hungry processes	
+
+		docker run --pids-limit <#_of_PIDs> <image_name>
+			prevents "fork-bombs" that exhaust PIDs available and crash host
+				fork-bomb --> 	:(){ :|: & };:
+			Docker does not set by default!
+
+	list namespaces
+		lsns
+
+	execute a command by a process within a specific namespace 
+		sudo nsenter --target <process_PID> --<namespace> <command> 
+		examples: 
+			sudo nsenter --target 654 --mount ls / 
+			sudo nsenter --target 654 --net ip addr 
+
+
+Capabilities 
+	breaks up root abilities rather than providing full root permissions
+	Docker grants a default set of capabilities to containers
+		chown, dac_override, fowner, fsetid, kill, setgid, setuid, setpcap, net_bind_service, net_raw, sys_chroot, mknod, audit_write, setfcap
+
+		can explicitly drop capabilities
+			docker run --cap-drop=<capabilitity> <image_name>
+
+			can still support Ping without NET_RAW
+				docker run --sysctl "net.ipv4.ping_group_range=0 1000000000" --cap-drop=NET_RAW <image_name>
+
+		may consider dropping all capabilities for specific processes or whole container
+			--cap-drop=all
+			effectively runnning as ordinary user
+		can also add back specific capabilities
+			--cap-drop=all --cap-add=<capability>
+
+		preventing privesc within container
+			Docker has flag to prevent container gaining additional privileges 
+				docker run --security-opt:no-new-privileges:true <image_name>
+
+			can be set on container or at daemon level (for all containers)
+			not set by default!
+
+	list capabilities of all processes
+		pscap
+
+
+AppArmor
+	Mandatory Access Control for Debian (and other) distros
+	equivalent of RedHat's SELinux - equally user-unfriendly
+	Docker daemon gets AppArmor profile by default
+	Docker containers get AppArmor profile by default
+	can define own profiles which can restrict process access
+
+	check status of AppArmor
+		sudo apparmor_status
+
+	can turn off AppArmor using --security-opt apparmor=unconfined
+
+
+Seccomp-BPF 
+	allow-lists syscalls
+	syscalls are interface to the Linux kernel
+		regardless of permissions, actions can't be taken without syscalls
+		some syscalls will also be blocked by removing capabilities
+			(can turn off seccomp/allow all syscalls, but some will still be blocked by capability limitations)
+	Docker has a default profile
+
+	--security-opt seccomp=<path/to/profile_name>.json
+
+	<profile_name>.json contains:
+	
+		{
+			"defaultAction": "SCMP_ACT_ERRNO",
+			"architectures": [
+				"SCMP_ARCH_X86_64",
+				"SCMP_ARCH_X86",
+				"SCMP_ARCH_X32",
+			],
+			"syscalls": [
+				<permitted syscalls>
+			]
+		}
+
+	can turn off Seccomp using --security-opt seccomp=unconfined
+
+	K8s disables Seccomp by default
+		needs to be re-enabled
+
+
+	running GUI programs in Docker
+		docker run -it --net=host \
+			-e DISPLAY=$DISPLAY \
+			-v /tmp/.X11-unix:/tmp/.X11-unix \
+			-v /dev/shm:/dev/shm \
+			-v ~/.Xauthority:/root/.Xauthority\
+			<image_name(e.g. raesene/firefox-v20)>
+	
+
+	squashing an image
+		useful to remove layers in an image to remove secrets (remove history) or save space
+		useful for frequent kernel updates without getting too big
+		docker build --squash    
+			requires experimental options at Docker daemon level
+		OR export and reimport
+			docker run --name <source_container> -d <image_name> /bin/true
+			docker export <source_container> | docker import - <output_container>
+			docker history <output_container>
+
+	joining a network namespace for troubleshooting/review
+		docker run -it --net container:<container_name> <image> /bin/ash
+
+
+
+Registries other than Docker Hub
+	Google Container Registry
+	AWS Elastic Container Registry
+	Azure Container Registry
+	Quay.io - RedHat public registry
+	GitHub - private registry only
+
+
+AWS - Elastic Container Registry (ECR)
+	for private Docker repos
+	can host diff versions and tags of images
+
+	Push image to repo
+		docker login 	#auth'n to repo
+			(if from Jenkins, Jenkins needs creds)
+			AWS has own CLI login command
+
+		docker tag <image_name>:<version> <repo>/<image_name>:<version>
+
+			**Image Naming outside DockerHub**
+				registryDomain/imageName:tag
+				DockerHub is default registryDomain
+					docker.io/library/<image>
+			Creates copy of local image tagged named for repo/image:version
+
+		docker push <repo>/<image_name>:<version>
+			push this tagged version to the repo
+
+	Pull image from private repo
+		need docker login to private repo first
+		reference the full <repo>/<image_name>
+
+Jenkins - Continuous Integration
+	create Docker images from code repos
+	push Docker images to Docker repos
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
