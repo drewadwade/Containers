@@ -1,0 +1,16 @@
+0. Setup
+
+install kubectl
+	download kubectl
+		curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+	download hash and confirm integrity
+		curl -LO "https://dl.k8s.io/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl.sha256"
+		echo "$(<kubectl.sha256) kubectl" | sha256sum --check
+	install
+		sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+			If no root access on the target system, can still install kubectl to ~/.local/bin
+				mkdir -p ~/.local/bin/kubectl
+				mv ./kubectl ~/.local/bin/kubectl
+			and then add ~/.local/bin/kubectl to $PATH
+	confirm installation
+		kubectl version --client
