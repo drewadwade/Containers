@@ -1,6 +1,6 @@
 0. Setup
 
-install kubectl
+Install kubectl
 	download kubectl
 		curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
 	download hash and confirm integrity
@@ -12,5 +12,23 @@ install kubectl
 				mkdir -p ~/.local/bin/kubectl
 				mv ./kubectl ~/.local/bin/kubectl
 			and then add ~/.local/bin/kubectl to $PATH
+				PATH = $PATH + "~/.local/bin/kubectl"
 	confirm installation
 		kubectl version --client
+
+
+Install kubeconfig file 
+	Less temporary
+		mv /path/to/kubeconfig/file ~/.kube/new.config 
+	More temporary	
+		KUBECONFIG=path/to/kubeconfig/file kubectl...
+		may wish to make alias to save typing env variable each time
+			alias k='KUBECONFIG=path/to/kubeconfig/file kubectl'
+				for fish: alias k 'KUBECONFIG=path/to/kubeconfig/file kubectl'
+	To skip TLS verification add to kubectl commands or alias: 
+		--insecure-skip-tls-verify
+
+
+Confirm kubeconfig working
+	kubectl version 
+	OR `k version` if using env variable and alias

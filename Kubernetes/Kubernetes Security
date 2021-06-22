@@ -270,6 +270,10 @@ RBAC Dangers
 		devs should be limited to a specific namespace
 	users can do dangerous things 
 		get secrets, create pods, etc.
+	read-only access can still be dangerous 
+		esp. cluster-wide read-only
+		e.g. GET on secrets
+			kubectl get secrets
 
 
 Admission Controllers

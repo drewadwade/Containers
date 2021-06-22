@@ -1,1 +1,2 @@
-iv. Clean Up
+kubectl get pods -A
+kubectl delete pod <pod_name>

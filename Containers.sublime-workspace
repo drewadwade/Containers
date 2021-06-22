@@ -1,0 +1,463 @@
+{
+	"auto_complete":
+	{
+		"selected_items":
+		[
+			[
+				"msg",
+				"msg_2"
+			],
+			[
+				"sub",
+				"sub_clean"
+			],
+			[
+				"s",
+				"subscription"
+			],
+			[
+				"NS",
+				"NSG_clean"
+			],
+			[
+				"allow",
+				"allow_rule"
+			],
+			[
+				"NSG",
+				"NSG_clean"
+			],
+			[
+				"rule",
+				"rule_clean"
+			],
+			[
+				"nsg",
+				"NSG_clean"
+			],
+			[
+				"subs",
+				"subscription"
+			],
+			[
+				"vault",
+				"vault_clean"
+			],
+			[
+				"vau",
+				"vault_clean"
+			],
+			[
+				"ser",
+				"server_clean"
+			],
+			[
+				"Serve",
+				"server_clean"
+			],
+			[
+				"server",
+				"server_clean"
+			],
+			[
+				"id",
+				"id_clean"
+			],
+			[
+				"token",
+				"token_clean"
+			],
+			[
+				"Auth",
+				"Auth_Header"
+			],
+			[
+				"grou",
+				"group_clean"
+			],
+			[
+				"account",
+				"account_clean"
+			],
+			[
+				"acc",
+				"account_clean"
+			],
+			[
+				"active",
+				"activecountermeasures"
+			]
+		]
+	},
+	"buffers":
+	[
+		{
+			"file": "LICENSE",
+			"settings":
+			{
+				"buffer_size": 35149,
+				"line_ending": "Unix"
+			}
+		},
+		{
+			"file": "README.md",
+			"settings":
+			{
+				"buffer_size": 95,
+				"line_ending": "Unix"
+			}
+		}
+	],
+	"build_system": "",
+	"build_system_choices":
+	[
+	],
+	"build_varint": "",
+	"command_palette":
+	{
+		"height": 0.0,
+		"last_filter": "",
+		"selected_items":
+		[
+		],
+		"width": 0.0
+	},
+	"console":
+	{
+		"height": 0.0,
+		"history":
+		[
+		]
+	},
+	"distraction_free":
+	{
+		"menu_visible": true,
+		"show_minimap": false,
+		"show_open_files": false,
+		"show_tabs": false,
+		"side_bar_visible": false,
+		"status_bar_visible": false
+	},
+	"expanded_folders":
+	[
+		"/Users/awade/Documents/GitHub/Containers"
+	],
+	"file_history":
+	[
+		"/Users/awade/Documents/GitHub/Containers/.gitignore",
+		"/Users/awade/Documents/GitHub/Containers/Kubernetes/0. Setup",
+		"/Users/awade/GPP/OAuth resources",
+		"/Users/awade/Desktop/whey-cewler.py",
+		"/Users/awade/Documents/GitHub/Containers/README.md",
+		"/Users/awade/Documents/GitHub/Containers/LICENSE",
+		"/Users/awade/Documents/GitHub/Containers/Container Security Notes",
+		"/Users/awade/Documents/GitHub/Containers/Kubernetes",
+		"/Users/awade/Documents/GitHub/Containers/Docker",
+		"/Users/awade/Desktop/Misc/STUFF FOR NEW FOLKS",
+		"/Users/awade/Training/Containers/Container Security Notes",
+		"/Users/awade/Desktop/HW_Testing/JTAG/jtag - problem.txt",
+		"/Users/awade/Desktop/HW_Testing/Serial/serial - problem.txt",
+		"/Users/awade/Desktop/HW_Testing/Flash Dump/flash dump - problem.txt",
+		"/Users/awade/Desktop/HW_Testing/Microcontroller/MC prog - problem.txt",
+		"/Users/awade/Desktop/HW_Testing/555 Timer/555 - problem.txt",
+		"/Users/awade/Desktop/HW_Testing/Lab Notes",
+		"/Users/awade/Desktop/HW_Testing/Serial/Authentication Spoof Solution.py",
+		"/Users/awade/Desktop/HW_Testing/LED ON Solution",
+		"/Users/awade/Desktop/HW_Testing/LED Cycle Solution",
+		"/Users/awade/Desktop/HW_Testing/LED ON",
+		"/Users/awade/Desktop/NotNCCConCTF/cool_reverser.py",
+		"/Users/awade/Desktop/NotNCCConCTF/wiz/websign/wsplatform.rc",
+		"/Users/awade/Desktop/NotNCCConCTF/Not NCC Con CTF",
+		"/Users/awade/Training/Training Plan",
+		"/Users/awade/Training/Skills",
+		"/Users/awade/Desktop/NotNCCConCTF/email.txt",
+		"/Users/awade/Desktop/NotNCCConCTF/cool_ciphertext_generator.py",
+		"/Users/awade/Desktop/NotNCCConCTF/rc4.js",
+		"/Users/awade/Desktop/NotNCCConCTF/dv.txt",
+		"/Users/awade/Desktop/YieldStreet/YieldStreet Notes",
+		"/Users/awade/Training/Containers/AWS K8S",
+		"/Users/awade/Desktop/YieldStreet/octopus_overview",
+		"/Users/awade/Desktop/YieldStreet/out/octopus_overview",
+		"/Users/awade/Desktop/YieldStreet/octopus_output",
+		"/Users/awade/Desktop/YieldStreet/out/octopus-output-2021-03-25.json",
+		"/Users/awade/Training/Containers/AWS-EKS CIS Scripts",
+		"/Users/awade/Desktop/YieldStreet/images_clean",
+		"/Users/awade/Desktop/YieldStreet/helper",
+		"/Users/awade/Desktop/YieldStreet/pods",
+		"/Users/awade/Desktop/YieldStreet/kubeaudit_output.txt",
+		"/Users/awade/clusterconfig.json",
+		"/Users/awade/Desktop/YieldStreet/test",
+		"/Users/awade/Desktop/NotNCCConCTF/Not the NCC Con CTF",
+		"/Users/awade/Tools/Kubernetes/offline-cluster-analyzer.rb",
+		"/Users/awade/Desktop/Not NCC Con CTF/email.txt",
+		"/Users/awade/Desktop/Not NCC Con CTF/cool_ciphertext_generator.py",
+		"/Users/awade/Desktop/Not NCC Con CTF/dv.txt",
+		"/Users/awade/Desktop/Not NCC Con CTF/eversec.sfo3.cdn.digitaloceanspaces.com/index.html",
+		"/Users/awade/Desktop/YieldStreet/YieldStreet",
+		"/Users/awade/Desktop/Not the NCC Con CTF",
+		"/Users/awade/Desktop/Lexmark Azure/Lexmark LCS Azure Notes",
+		"/Users/awade/Training/Azure/CIS Scripts",
+		"/Users/awade/Training/Azure/31.sh",
+		"/Users/awade/Training/Azure/rules",
+		"/Users/awade/.zshrc",
+		"/Users/awade/.bash_profile",
+		"/Users/awade/Tools/scoutsuite-report/.bash_profile",
+		"/Users/awade/Tools/scoutsuite-report/scoutsuite-results/scoutsuite_results_azure-tenant-12709065-6e6c-41c9-9e4d-fb0a436969ce.js",
+		"/Users/awade/Desktop/OnnaTech/OnnaTech Notes",
+		"/Users/awade/Training/WAPT/brute MFA script",
+		"/Users/awade/Desktop/Autoklose/AutoKlose Notes",
+		"/etc/sudoers.d/sudoers",
+		"/etc/sudoers",
+		"/Users/awade/Desktop/File Uploads/shellfile.py",
+		"/Users/awade/Desktop/MyNameFlow/app-main.js",
+		"/Users/awade/Downloads/BreezyHR/BreezyHR Notes",
+		"/Users/awade/Desktop/BreezyHR/wapt-pentest-methodology.gpp.md",
+		"/Users/awade/Desktop/BreezyHR/PoC.html",
+		"/Users/awade/Desktop/BreezyHR/ssl",
+		"/Users/awade/Tools/WebGopher/breezy",
+		"/Users/awade/Desktop/Autoklose/shellfile.php",
+		"/Users/awade/Desktop/GrooveHQ/GrooveHQ - GPP.md",
+		"/Users/awade/Desktop/GrooveHQ/Groove Notes",
+		"/Users/awade/Downloads/shellfile.php",
+		"/Users/awade/Desktop/GrooveHQ/ssl",
+		"/Users/awade/Desktop/GrooveHQ/users",
+		"/Users/awade/Training/WAPT/NCC WAPT Training",
+		"/Users/awade/Downloads/LoginApplet.class",
+		"/Users/awade/Desktop/QSC Audio/Reflect/emails",
+		"/Users/awade/Desktop/QSC Audio/Reflect/QREM notes",
+		"/Users/awade/Desktop/QSC Audio/Reflect/qrem/user-composite-api/src/boundaries/rest/handlers/organization/index.js",
+		"/Users/awade/Desktop/QSC Audio/Reflect/API",
+		"/Users/awade/Desktop/QSC Audio/Reflect/about-bin-files.txt",
+		"/Users/awade/Downloads/qrem-public-api.yaml",
+		"/Users/awade/output",
+		"/Users/awade/jsonfile",
+		"/Users/awade/Desktop/QSC Audio/QSCID/QSC-ID & SSIS",
+		"/Users/awade/Desktop/QSC Audio/QSC Documentation",
+		"/Users/awade/example",
+		"/Users/awade/Desktop/QSC Audio/user_signin.html",
+		"/Users/awade/Desktop/QSC Audio/QSC-ID & SSIS",
+		"/Users/awade/Desktop/QSC Audio/Reflect",
+		"/Users/awade/Desktop/Salesforce Thunderhead/test515.sh",
+		"/Users/awade/Documents/GitHub/NPT/3. Gaining Access/Database",
+		"/Users/awade/Documents/GitHub/NPT/4. Post-Compromise/File Transfers",
+		"/Users/awade/Documents/GitHub/NPT/4. Post-Compromise/Enumeration",
+		"/Users/awade/Documents/GitHub/NPT/4. Post-Compromise/Persistence",
+		"/Users/awade/Documents/GitHub/NPT/1. Passive Recon/ii. Credentials",
+		"/Users/awade/Documents/GitHub/NPT/3. Gaining Access/Buffer Overflow",
+		"/Users/awade/Documents/GitHub/NPT/4. Post-Compromise/Binary Analysis",
+		"/Users/awade/Documents/GitHub/NPT/4. Post-Compromise/Credential Harvesting",
+		"/Users/awade/Documents/GitHub/NPT/4. Post-Compromise/Interesting Files",
+		"/Users/awade/Documents/GitHub/NPT/4. Post-Compromise/Privilege Escalation",
+		"/Users/awade/Documents/GitHub/NPT/4. Post-Compromise/Firewall Bypass",
+		"/Users/awade/Tools/azure_cis_scanner/Dockerfile",
+		"/Users/awade/Tools/azure_cis_scanner/.env",
+		"/Users/awade/Tools/azure_cis_scanner/docker-compose.yml",
+		"/Users/awade/Tools/.env",
+		"/Users/awade/Test/Dockerfile",
+		"/Users/awade/Test/templates/Dockerfile",
+		"/Users/awade/Test/templates/index.html",
+		"/Users/awade/Test/requirements.txt",
+		"/Users/awade/Test/app.py",
+		"/Users/awade/Desktop/Salesforce Thunderhead/Salesforce Thunderhead",
+		"/Users/awade/Desktop/Training/Training Plan",
+		"/Users/awade/Desktop/Salesforce Thunderhead/test1.sh",
+		"/Users/awade/Desktop/Salesforce Thunderhead/test",
+		"/Users/awade/Desktop/Research/Research Topics",
+		"/Users/awade/Documents/GitHub/WAPT/2. Active Scanning/2. Checklist",
+		"/Users/awade/Documents/GitHub/WAPT/3. Gaining Access/WAF Bypass",
+		"/Users/Drew/Documents/GitHub/WAPT/2. Active Scanning/2. Checklist",
+		"/Users/Drew/Documents/GitHub/WAPT/3. Gaining Access/SQL Injection",
+		"/Users/Drew/Documents/GitHub/WAPT/1. Passive Recon/1. Checklist",
+		"/Users/Drew/Documents/GitHub/WAPT/3. Gaining Access/XSS",
+		"/Users/Drew/Documents/GitHub/WAPT/2. Active Scanning/ii. Subdirectories & Files",
+		"/Users/Drew/Documents/GitHub/WAPT/3. Gaining Access/XXE",
+		"/Users/Drew/Documents/GitHub/WAPT/3. Gaining Access/WAF Bypass"
+	],
+	"find":
+	{
+		"height": 28.0
+	},
+	"find_in_files":
+	{
+		"height": 110.0,
+		"where_history":
+		[
+		]
+	},
+	"find_state":
+	{
+		"case_sensitive": true,
+		"find_history":
+		[
+		],
+		"highlight": true,
+		"in_selection": false,
+		"preserve_case": false,
+		"regex": true,
+		"replace_history":
+		[
+		],
+		"reverse": false,
+		"scrollbar_highlights": true,
+		"show_context": true,
+		"use_buffer2": true,
+		"use_gitignore": true,
+		"whole_word": false,
+		"wrap": true
+	},
+	"groups":
+	[
+		{
+			"sheets":
+			[
+				{
+					"buffer": 0,
+					"file": "LICENSE",
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 35149,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								0,
+								0
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/Text/Plain text.tmLanguage",
+							"tab_size": 2,
+							"translate_tabs_to_spaces": true
+						},
+						"translation.x": 0.0,
+						"translation.y": 0.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 1,
+					"stack_multiselect": false,
+					"type": "text"
+				},
+				{
+					"buffer": 1,
+					"file": "README.md",
+					"selected": true,
+					"semi_transient": false,
+					"settings":
+					{
+						"buffer_size": 95,
+						"regions":
+						{
+						},
+						"selection":
+						[
+							[
+								0,
+								0
+							]
+						],
+						"settings":
+						{
+							"syntax": "Packages/Markdown/Markdown.sublime-syntax"
+						},
+						"translation.x": 0.0,
+						"translation.y": 0.0,
+						"zoom_level": 1.0
+					},
+					"stack_index": 0,
+					"stack_multiselect": false,
+					"type": "text"
+				}
+			]
+		}
+	],
+	"incremental_find":
+	{
+		"height": 28.0
+	},
+	"input":
+	{
+		"height": 42.0
+	},
+	"layout":
+	{
+		"cells":
+		[
+			[
+				0,
+				0,
+				1,
+				1
+			]
+		],
+		"cols":
+		[
+			0.0,
+			1.0
+		],
+		"rows":
+		[
+			0.0,
+			1.0
+		]
+	},
+	"menu_visible": true,
+	"output.exec":
+	{
+		"height": 132.0
+	},
+	"output.find_results":
+	{
+		"height": 0.0
+	},
+	"pinned_build_system": "",
+	"project": "Containers.sublime-project",
+	"replace":
+	{
+		"height": 52.0
+	},
+	"save_all_on_build": true,
+	"select_file":
+	{
+		"height": 0.0,
+		"last_filter": "",
+		"selected_items":
+		[
+		],
+		"width": 0.0
+	},
+	"select_project":
+	{
+		"height": 0.0,
+		"last_filter": "",
+		"selected_items":
+		[
+		],
+		"width": 0.0
+	},
+	"select_symbol":
+	{
+		"height": 0.0,
+		"last_filter": "",
+		"selected_items":
+		[
+		],
+		"width": 0.0
+	},
+	"selected_group": 0,
+	"settings":
+	{
+	},
+	"show_minimap": true,
+	"show_open_files": false,
+	"show_tabs": true,
+	"side_bar_visible": true,
+	"side_bar_width": 193.0,
+	"status_bar_visible": true,
+	"template_settings":
+	{
+	}
+}
