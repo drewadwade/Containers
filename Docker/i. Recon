@@ -1,18 +1,111 @@
 ***Docker is Linux processes configured to provide the illusion of isolation***
-anyone on Host can see all containers and what they're running
-
 
 Indicators you're in a container
-	look for /.dockerenv
-	look at PID 1 -> likely not init
-	look at ps -ef -> no hardware management processes
+	/.dockerenv
+	PID 1 -> likely not init or systemd
+	ps aux -> very few processes
+	ps -ef -> no hardware management processes
+	cat /proc/1/cgroups -> paths include "docker"
+
+nmap
+	2375 - Docker Daemon (unauthenticated) API
+	2376 - Docker Daemon (authenticated) API
+		   network authentication based on client certificates (see .docker folder)
+	5000 - Docker Registry default
+
+	
+Query unauthenticated Docker Daemon API
+	get containers
+		docker -H tcp://<IP_address>:2375 ps
+	get images 
+		docker -H tcp://<IP_address>:2375 images
+	dump logs from a running container
+		curl --output - http://<IP_address>:2375/containers/<container_ID>/logs?stdout=true
+
+List capabilities within a container
+	capsh --print
 
 
-use of non-official or Docker certified images
-	official tag visible in Docker Hub or in results of `docker search <image_name>`
-	offical images will also not be preceded by a user ID
+Local access to Docker socket
+	access to an account in the docker group would be most likely means of access
 
-mind that images have been updated recently
+	/var/run/docker.sock
+		default permissions is 660 (root:docker) - look for 777s
+		anyone who can access that file can access the containers
+
+		Linux 18.09+ - Docker client can also access engine instance via SSH
+			need to configure for key-based logins (or will be prompted for password on each command)
+
+	containerd socket
+		/var/run/docker/libcontainerd/docker-containerd.sock 		for versions <18.09
+		/var/run/containerd/containerd.sock 						for versions 18.09+
+	
+	Windows - accessed via named pipe at \.\pipe\docker_engine
+
+
+
+
+Query Docker registries
+	for Docker Hub only
+		docker search
+
+	show remote registry catalog
+		curl http://<registry_IP>:5000/<API_version_e.g._v2/_catalog
+	show image tags
+		curl http://<registry_IP>:5000/v2/<repository_name>/<image_name>/tags/list
+
+	show remote image manifest
+		curl http://<registry_IP>:5000/v2/<repository_name>/<image_name>/manifests/<tag>
+
+		"history" key - commands executed during the image building stage stored in plaintext
+
+	retrieve all image manifests from a registry
+		https://github.com/nccgroup/go-pillage-registries
+
+	should not use external non-official images or non-Docker-certified images
+		official tag visible in Docker Hub or in results of `docker search <image_name>`
+		offical images will also not be preceded by a user ID
+
+	images should have been updated recently
+
+
+Retrieving Docker images
+	docker pull <repository_IP>:5000/<repository_name>/<image_name>
+
+
+Reversing Dockerfiles
+	fine for standard image reviews but the recovered metadata will not tell whole story
+
+	manually
+		mkdir <output_dir> && cd <output_dir
+		docker save -o <output_file>.tar <image_name>
+		tar -xvf <output_file>.tar
+			each directory created is a layer
+				json is metadata for the layer - what was run
+		cat <layer>.json | jq
+			files copied in will be referred to using hash, not filename
+
+	automated
+		dive - github.com/wagoodman/dive
+
+			docker images
+				get image ID
+			dive <image_ID>
+
+		whaler - github.com/P3GL3G/Whaler
+			(not well-supported)
+
+			whaler -sV=<docker_API_version> <image_name>
+
+	USER <username> 
+		running as root ("Image User") is bad (not terrible) practice
+			LOW in regular env, MED in high security env
+			some commands may require root (e.g. package manager calls)
+		can use username or UID/GID - will need to create using RUN in Dockerfile
+		
+
+
+
 
 query container parameters (e.g. IP)
 	docker inspect -f "{{ .NetworkSettings.IPAddress }}" <container_name>
@@ -29,69 +122,13 @@ Docker Daemon
 			will have "hosts" line(s) defining its listener(s)
 
 	Attack Surface - Local
-		UNIX Socket
-			/var/run/docker.sock
-				default permissions is 660 (root:docker) - look for 777s
-				anyone who can access that file can access the containers
-
-			Linux 18.09+ - Docker client can also access engine instance via SSH
-				need to configure for key-based logins (or will be prompted for pass on each command)
-
-		containerd socket
-			/var/run/docker/libcontainerd/docker-containerd.sock 		for versions <18.09
-			/var/run/containerd/containerd.sock 						for versions 18.09+
-		
-		access to an account in the docker group would be most likely means of access
-
-		Windows - accessed via named pipe at \.\pipe\docker_engine
-
 	Attack Surface - Remote
-		TCP 2376 - HTTPS - network authentication based on client certificates
-			look for certs in .docker folder of dev machines
-			authentication allows full control of Docker daemon
 
-		TCP 2375 - HTTP - no auth - direct access to Docker API - easy RCE
-			remote test (runs ps) for access to daemon on 2375
-				docker -H tcp://<IP_address>:2375 ps
 
-			dump logs from a running container
-				curl --output - http://127.1:2375/containers/<ID>/logs?stdout=true
 
-Dockerfiles
-	USER <username> 
-		running as root is bad (not terrible) practice
-			LOW in regular env, MED in high security env
-		can use username or UID/GID - will need to create using RUN in Dockerfile
-		some commands may require root (e.g. package manager calls)
 
-	extract a Dockerfile from an existing Image
-		fine for standard image reviews but the recovered metadata will not tell whole story
 
-		manually
-			mkdir <output_dir> && cd <output_dir
-			docker save -o <output_file>.tar <image_name>
-			tar -xvf <output_file>.tar
-				each directory created is a layer
-					json is metadata for the layer - what was run
-			cat <layer>.json | jq
-				files copied in will be referred to using hash, not filename
 
-		automated
-			whaler - github.com/P3GL3G/Whaler
-
-				whaler -sV=<docker_API_version> <image_name>
-
-				parses out a Dockerfile for the image
-				tells you identity of user the image runs as 
-					look for Image User - User is root
-				will look for potential secrets
-				whaler is not well-supported
-
-			dive - github.com/wagoodman/dive
-
-				dive <image_name>
-
-				parses out a Dockerfile for the image
 
 .dockerignore - sim .gitignore
 
@@ -100,17 +137,6 @@ watch out for secrets in environment variables (ENV)
 the "registry" image is a Docker reference image for a local registry
 	should not appear in prod
 
-`docker search` only works for Docker Hub
-	can curl remote registry API
-	show registry catalog
-		curl http://<registry_IP>:5000/v2/_catalog
-	show image manifest
-		curl http://<registry_IP>:5000/<image_name>
-	retrieve all image manifests from a registry
-		https://github.com/nccgroup/go-pillage-registries
-
-publishing images to Docker Hub requires docker login
-	stores creds in $HOME/.docker/config.json
 
 minimal container build (e.g., just necessary binary) may not have shell capability
 	may not be scannable w/ vuln scanner either

@@ -142,6 +142,30 @@ Overlay File System
 	chmod and chown bloat images because they effectively become lines that copy each file affected (w/ new perms)
 
 
+Docker Socket
+	UNIX Socket for IPC (Interprocess Communication)
+		uses the filesystem instead of interfaces
+
+		/var/run/docker.sock
+			default permissions is 660 (root:docker) - look for 777s
+			anyone who can access that file can access the containers
+
+		Linux 18.09+ - Docker client can also access engine instance via SSH
+			need to configure for key-based logins (or will be prompted for pass on each command)
+
+	containerd socket
+		/var/run/docker/libcontainerd/docker-containerd.sock 		for versions <18.09
+		/var/run/containerd/containerd.sock 						for versions 18.09+
+	
+	Windows - accessed via named pipe at \.\pipe\docker_engine
+
+	access to an account in the docker group would be most likely means of access
+		docker group access is equivalent to permanent, non-password-protected root access
+	Docker.sock mounted into container
+		typically done for monitoring and container management
+		dangerous to effectively access docker.sock as root
+
+
 Docker Networks
 	Containers in same Docker Network can communicate with each other using just their container names as hostnames
 	default is not to listen on the network
@@ -429,7 +453,7 @@ Namespaces
 		lsns
 
 	execute a command by a process within a specific namespace 
-		sudo nsenter --target <process_PID> --<namespace> <command> 
+		sudo sudo  --target <process_PID> --<namespace> <command> 
 		examples: 
 			sudo nsenter --target 654 --mount ls / 
 			sudo nsenter --target 654 --net ip addr 
