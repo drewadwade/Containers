@@ -43,8 +43,6 @@ Local access to Docker socket
 	Windows - accessed via named pipe at \.\pipe\docker_engine
 
 
-
-
 Query Docker registries
 	for Docker Hub only
 		docker search
@@ -120,13 +118,6 @@ Docker Daemon
 			ExecStart will have -H fd:// section by default - listening local only, not network
 		/etc/docker/daemon.json
 			will have "hosts" line(s) defining its listener(s)
-
-	Attack Surface - Local
-	Attack Surface - Remote
-
-
-
-
 
 
 

