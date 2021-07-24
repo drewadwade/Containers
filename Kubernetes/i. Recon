@@ -28,10 +28,38 @@ Nmap
 
 	30000-32767 - node port services, including Tiller
 
+DNS
+	coredns on default kubeadm clusters listens on 10.96.0.10
+
+	List all service DNS records with their corresponding svc IP
+		dig +short <server_name> any.any.svc.cluster.local
+
+		doesn't give service names, but does give list of IPs for targetted portscans
+
 
 Indicators you're in a pod
 	/etc/hosts
 		# Kubernetes-managed hosts file._127.0.0.1_localhost_::1_localhost ip6-localhost ip6-loopback_fe00::0_ip6-localnet_fe00::0_ip6-
+
+
+Kubernetes Servers on the Internet
+	a lot of managed Kubernetes vendors make the API server Internet-accessible by default
+		should be disabled if not needed!
+
+	How do we know we’ve found a Kubernetes server?
+		predictable and consistent TLS certificate SANs
+
+	What version of Kubernetes is running?
+		many clusters will make the /version endpoint available without authentication
+			should be disabled if not needed!
+			Microsoft blocks by default
+
+	What vendor is running this cluster?
+		many of the clusters have customized version strings (see /version)
+			‘gke’ for GKE
+			? for EKS
+			? for IKS
+			hex string at end for OpenShift (e.g. v1.9.1+a0ce1bc657)
 
 
 Query Insecure Port
