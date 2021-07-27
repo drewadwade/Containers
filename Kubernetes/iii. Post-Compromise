@@ -315,6 +315,12 @@ spec:
 		cat /rooted/etc/kubernetes/pki/ca.key
 
 
+If you have pod creation rights, but no Internet access to pull a new image
+	Find a pod on the cluster with appropriate tooling (sh, ls, etc.)
+	Create a new manifest with "imagePullPolicy: None" and "hostPath: path: /" using that pod's image
+		doesn't try to reach out to the hub, just uses local Docker's version of the image
+		see noderoot.yml above
+	Create the pod and exec into it
 
 		
 
