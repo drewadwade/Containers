@@ -31,4 +31,16 @@ Install kubeconfig file
 
 Confirm kubeconfig working
 	kubectl version 
-	OR `k version` if using env variable and alias
+
+
+
+
+GKE
+	Log in to GCP 
+		gcloud auth login
+	Get kubectl config file
+		gcloud container clusters get-credentials $CLUSTER
+	Run commands using kubectl
+		kubectl create -f my.yaml
+
+	https://cloud.google.com/sdk/docs/cheatsheetInspi
