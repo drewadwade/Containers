@@ -237,6 +237,34 @@ Kubectl
 
 		Need to remove status: sections before this can be used to apply as a new/updated configuration
 
+	Get security contexts for all pods in a cluster
+		kubectl get pods --all-namespaces -o go-template --template='{{range .items}}{{"pod: "}}{{.metadata.name}}
+	    {{if .spec.securityContext}}
+	      PodSecurityContext:
+	        {{"runAsGroup: "}}{{.spec.securityContext.runAsGroup}}                               
+	        {{"runAsNonRoot: "}}{{.spec.securityContext.runAsNonRoot}}                           
+	        {{"runAsUser: "}}{{.spec.securityContext.runAsUser}}                                 {{if .spec.securityContext.seLinuxOptions}}
+	        {{"seLinuxOptions: "}}{{.spec.securityContext.seLinuxOptions}}                       {{end}}
+	    {{else}}PodSecurity Context is not set
+	    {{end}}{{range .spec.containers}}
+	    {{"container name: "}}{{.name}}
+	    {{"image: "}}{{.image}}{{if .securityContext}}                                      
+	        {{"allowPrivilegeEscalation: "}}{{.securityContext.allowPrivilegeEscalation}}   {{if .securityContext.capabilities}}
+	        {{"capabilities: "}}{{.securityContext.capabilities}}                           {{end}}
+	        {{"privileged: "}}{{.securityContext.privileged}}                               {{if .securityContext.procMount}}
+	        {{"procMount: "}}{{.securityContext.procMount}}                                 {{end}}
+	        {{"readOnlyRootFilesystem: "}}{{.securityContext.readOnlyRootFilesystem}}       
+	        {{"runAsGroup: "}}{{.securityContext.runAsGroup}}                               
+	        {{"runAsNonRoot: "}}{{.securityContext.runAsNonRoot}}                           
+	        {{"runAsUser: "}}{{.securityContext.runAsUser}}                                 {{if .securityContext.seLinuxOptions}}
+	        {{"seLinuxOptions: "}}{{.securityContext.seLinuxOptions}}                       {{end}}{{if .securityContext.windowsOptions}}
+	        {{"windowsOptions: "}}{{.securityContext.windowsOptions}}                       {{end}}
+	    {{else}}
+	        SecurityContext is not set
+	    {{end}}
+		{{end}}{{end}}' > output.file
+
+
 	port-forwarding
 		get direct access to a pod's services from a local machine
 			portforward cluster services to the machine you run kubectl on

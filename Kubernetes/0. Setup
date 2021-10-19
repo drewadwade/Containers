@@ -38,9 +38,12 @@ Confirm kubeconfig working
 GKE
 	Log in to GCP 
 		gcloud auth login
+		OR use GCP cloudshell
+
 	Get kubectl config file
-		gcloud container clusters get-credentials $CLUSTER
-	Run commands using kubectl
-		kubectl create -f my.yaml
+		gcloud container clusters get-credentials <cluster_name> --zone <GCP_Zone>
+
+	Connect to worker nodes
+		gcloud compute ssh <node_name> --zone <GCP_Zone>
 
 	https://cloud.google.com/sdk/docs/cheatsheetInspi
