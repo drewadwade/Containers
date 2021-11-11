@@ -37,6 +37,9 @@ DNS
 
 		doesn't give service names, but does give list of IPs for targetted portscans
 
+	query all the cluster service names and ports from DNS from any pod
+		https://github.com/raesene/alpine-containertools/blob/master/scripts/k8s-dns-enum.rb
+
 
 Indicators you're in a pod
 	/etc/hosts
@@ -309,6 +312,9 @@ K8s Config Testing Tools
 	kubeletctl (github.com/cyberark/kubeletctl)
 		automates curl testing against kubelet API
 			esp useful on unauthenticated kubelet API		 
+
+	SnowCat (github.com/praetorian-inc/snowcat)
+		Istio ServiceMesh config review tool
 
 
 K8s PT Tools
