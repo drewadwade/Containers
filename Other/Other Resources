@@ -1,0 +1,21 @@
+Other Resources
+
+Overwriting core K8s CRDs
+	https://raesene.github.io/blog/2021/11/01/fun-with-CRDs/
+
+Prometheus
+	no authentication on its services (web portals) - by design
+	injects several PROMETHEUS environment variables into every pod 
+		easy to find
+		provides service IP and pod IPs (typically runs on port 80)
+	Low Finding - Info Disclosure - take screenshot using kubectl port-forward
+
+	https://jfrog.com/blog/dont-let-prometheus-steal-your-fire/
+
+Jaeger
+	no authentication on its services (web portals) 
+	Low Finding (Med in high sec or multi-tenant environment)
+
+Fluentd
+	often no authentication on its services (web portals) 
+	can read and write logs

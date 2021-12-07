@@ -89,18 +89,4 @@ Kernel Breakout
 K8s rights are additive 
 	if a right is in ABAC or RBAC or Webhook, that right will be given
 
-Prometheus
-	no authentication on its services (web portals) - by design
-	injects several PROMETHEUS environment variables into every pod 
-		easy to find
-		provides service IP and pod IPs (typically runs on port 80)
-	Low Finding - Info Disclosure - take screenshot using kubectl port-forward
-
-Jaeger
-	no authentication on its services (web portals) 
-	Low Finding (Med in high sec or multi-tenant environment)
-
-Fluentd
-	often no authentication on its services (web portals) 
-	can read and write logs
 

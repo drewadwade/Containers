@@ -316,6 +316,10 @@ K8s Config Testing Tools
 	SnowCat (github.com/praetorian-inc/snowcat)
 		Istio ServiceMesh config review tool
 
+	KubeScape (github.com/armosec/kubescape)
+		K8s hardened configuration reviewer - NSA/CISA standards
+		based on OPA engine
+
 
 K8s PT Tools
 	kube-hunter (github.com/aquasecurity/kube-hunter)
