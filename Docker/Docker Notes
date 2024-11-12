@@ -126,7 +126,7 @@ Autoremove container on close
 
 
 Overlay File System 
-	images consist of layers with resultin file system being their union
+	images consist of layers which results in file system being their union
 	each hash listed during the docker pull operation is a line in the Dockerfile - another tarball'd layer
 
 	list all actions to create the image
@@ -453,7 +453,7 @@ Namespaces
 		lsns
 
 	execute a command by a process within a specific namespace 
-		sudo sudo  --target <process_PID> --<namespace> <command> 
+		sudo nsenter --target <process_PID> --<namespace> <command> 
 		examples: 
 			sudo nsenter --target 654 --mount ls / 
 			sudo nsenter --target 654 --net ip addr 

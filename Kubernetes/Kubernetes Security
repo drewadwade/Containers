@@ -3,8 +3,154 @@ most K8s restrictions map to underlying Docker constraints
 Audit all workloads running in a cluster for hardening steps
 	kubeaudit all 			- uses ~/.kube/config by default
 
+Running Kube-Bench
+	docker run --pid=host -v /etc:/etc:ro -v /var:/var:ro -t aquasec/kube-bench:latest --version 1.22
+
 Statically audit manifests before applying to cluster with kubesec (github/om/controlplaneio/kubesec)
 	docker run -i kubesec/kubesec:512c5e3 scan /dev/stdin < /path/to/manifest/file.yml
+
+Verify Platform Binaries
+	From Control Plane Node
+		k get nodes 	# determine K8s version running
+		wget https://dl.k8s.io/<verion_eg_v.1.22.2>/kubernetes-server-linux-amd64.tar.gz
+		sha512sum <binary_filename> > compare1		
+		in vim, remove filename from end of hash in compare1
+		copy sha512 hash from correct version in github.com/kubernetes/kubernetes/ to compare2
+		diff compare1 compare2 	# should return empty
+		tar xzf <binary_filename> 	# decompress binary archive
+		sha512sum <component_filename_in_archive> >> compare1		# e.g. ./kubernetes/server/bin/kube-apiserver
+		in vim, remove filename from end of hash in compare1
+		For Components Running in Pods Without Shells (e.g. kube-apiserver)
+			ps aux | grep <component>	# e.g. kube-apiserver
+			find /proc/<pid_of_component>/root | grep <component>
+			sha512sum <component_filename_in_cluster> >> compare2		# e.g. /proc/1843/root/usr/local/bin/kube-apiserver
+		For Components Accessible on Control Plane Node
+			whereis <component>			# e.g. kubelet
+			sha512sum <component_filename_in_cluster> >> compare2		# e.g. /usr/bin/kubelet
+		in vim, remove filename from end of hash in compare2
+		diff compare1 compare2 	# should return empty
+
+Image Footprint
+	only RUN, COPY, and ADD create new layers
+	can reduce footprint using multi-stage build
+		Stage 1 build executable (need larger ubuntu for lang and compiler)
+			FROM ubuntu
+			RUN apt update && apt install -y golang-go
+			COPY app.go .
+			RUN CGO_ENABLED=0 go build app.go
+		Stage 2 smaller container with lighter-weight OS and built app only
+			FROM alpine
+			COPY --from=0 /app . 	#from stage 1
+			CMD ["./app"]
+		Resulting image will just contain alpine container with running app
+
+
+Image Security
+	use specific package versions
+	don't run as root
+		USER nonrootusername
+	make filesystem read-only
+		RUN chmod -w /etc
+	remove shell access
+		RUN rm -rf /bin/*
+		
+	trivy scanning
+
+Runtime Immutability
+	Container Image Level
+		remove shells
+		ro filesystem
+		run as user and non-root
+		(command: chmod a-w -R /)
+		(startupProbe - no liveness or readiness probes will run until startup has completed
+			startupProbe runs rm -rf /bin && chmod a-w -R /)
+	(init container
+		give read-write permissions to a volume
+		write logic for app to volume
+		give app container read permissions to volume)
+	SecurityContext or admission controller
+		Enforce read-only filesystem
+			...
+			spec:
+			  containers:
+			    securityContext: 
+			      readOnlyRootFilesystem: true
+			...
+		May need to add emptydir volume for somewhere to write logs, etc 
+			...
+			volumeMounts:
+			- mountPath: path/to/log/writing/location
+			  name: cache-volume
+			...
+			volumes:
+			- name: cache-volume
+			  emptyDir: {}
+			...
+
+		For Docker, use:
+			docker run --read-only --tmpfs /path/for/writing <container_name>
+
+	NOTE: Ensure RBAC does not allow most users to edit pods/containers and these immutability settings
+
+
+GUI Elements & Dashboard
+	`kubectl proxy` can expose dashboard to local machine without exposing to Internet - http://localhost:1234
+	`kubectl port-forward` - more generic than kubectl proxy - tcp://localhost:1234
+	can also expose via Ingress with authentication if remote access required
+
+	Dashboard arguments - https://github.com/kubernetes/dashboard/blob/master/docs/common/dashboard-arguments.md
+
+
+API Access
+	don't allow anonymous access
+		check /etc/kubernetes/manifests/kube-apiserver.yaml for
+			...
+			containers:
+			- command:
+			  - kube-apiserver 
+			  - --anonymous-auth=false
+			...
+		may break health and liveness checks
+
+	close insecure port
+		insecure access no longer possible since v1.20
+		check /etc/kubernetes/manifests/kube-apiserver.yaml for
+			...
+			containers:
+			- command:
+			  - kube-apiserver 
+			  - --insecure-port=0
+			...
+
+	restrict access from nodes to API (NodeRestriction)
+		limits the node labels that a kubelet can modify
+		check /etc/kubernetes/manifests/kube-apiserver.yaml for
+			...
+			containers:
+			- command:
+			  - kube-apiserver 
+			  - --enable-admission-plugins=NodeRestriction
+			...
+		ensure secure workload isolation via labels
+
+	don't expose ApiServer to outside
+
+	prevent unauthorised access (RBAC)
+
+	prevent access from pods to API (no SA token mounted)
+
+Log Locations
+	/var/log/pods/
+	/var/log/containers/
+	crictl
+		crictl ps 		# get container_id for component
+		crictl logs <container_id>
+	Docker
+		docker ps 		# get container_id for component
+		docker logs <container_id>
+	kubelet logs: 
+		/var/log/syslog 
+		journalctl
 
 Don't mount Service Tokens where not needed
 	automountServiceAccountToken: false		
@@ -66,7 +212,54 @@ set resource limits in container specifications
 Implement Network Policy
 	enabled by default, but default is Allow All
 
-	example web deny policy
+	by default every pod can communicate with every other pod
+	use Network Plugins CNI (Calico, Weave, etc)
+	namespace-specific 
+	can restrict based on podSelector, namespaceSelector, or ipBlock
+		namespace must be labelled
+
+	apiVersion: networking.k8s.io/v1
+	kind: NetworkPolicy
+	metadata:
+	  name: example
+	  namespace: default		# policies apply to this namespace unless otherwise indicated with namespaceSelector
+	spec:
+	  podSelector:
+	    matchLabels:
+	      id: frontend			# traffic source is pods labelled "frontend"
+	  policyTypes:
+	  - Egress
+	  egress:
+	  - to:
+	    - namespaceSelector:
+	        matchLabels:
+	          id: namespace1	# destination 1 is anything on port 80 in namespace "namespace1"
+	    ports:
+	    - protocol: TCP
+	      port: 80
+	  - to:
+	    - podSelector:
+	        matchLabels:
+	          id: backend		# destination 2 is pods labelled "backend" in namespace "default"
+
+	order of policy items does not matter
+	union of all policies will be applied
+
+
+	Default Deny Policy 
+
+		apiVersion: networking.k8s.io/v1
+		kind: NetworkPolicy
+		metadata:
+		  name: default-deny
+		  namespace: default	
+		spec:
+		  podSelector: {}
+		  policyTypes:
+		  - Ingress
+		  - Egress
+
+	Example web deny policy
 		web-deny.yaml
 			kind: NetworkPolicy
 			apiVersion: networking.k8s.io/v1
@@ -78,21 +271,159 @@ Implement Network Policy
 			      app: web
 			  ingress: []
 
-    apply policy
-    	kubectl apply -f /path/to/web-deny.yml
+  apply policy
+  	kubectl apply -f /path/to/web-deny.yml
 
-    scaling becomes very complex
-    some CNIs (Calico, Cilium) offer additional capabilities for network traffic mgmt
-    some cloud providers (AWS, Azure) also have specific FW capabilities
-    good animated illustrated examples of netpol recipies
-    	github.com/ahmetb/kubernetes-network-policy-recipes
+  scaling becomes very complex
+  some CNIs (Calico, Cilium) offer additional capabilities for network traffic mgmt
+  some cloud providers (AWS, Azure) also have specific FW capabilities
+  good animated illustrated examples of netpol recipies
+  	github.com/ahmetb/kubernetes-network-policy-recipes
 
-    useful for blocking control plane access, AWS metadata access
+  useful for blocking control plane access, AWS metadata access
+
+Node Metadata
+	API reachable from VMs and pods by default
+	can contain cloud creds for VMs/nodes
+		instances may need it, but nodes typically don't
+			restrict access using Network Policies		
+	can contain provisioning data like kubelet creds
+
+	curl http://169.254.169.254/computeMetadata/v1/instance/name -H "Metadata-Flavor: Google"
+
+	ensure cloud-instance-account has only necessary permissions (diff by CSP, not managed in K8s)
+	
+		One NetPol to Default Deny Metadata to all pods
+		...
+		policyTypes:
+		- Egress
+		egress:
+		- to:
+		  - ipBlock:
+		      cidr: 0.0.0.0/0
+		      except:
+		      - 169.254.169.254/32
+		...
+
+		And One to Allow Metadata to specific labelled pods
+		...
+		spec:
+		  podSelector:
+		    matchLabels:
+		      role: metadata-accessor
+		policyTypes:
+		- Egress
+		egress:
+		- to:
+		  - ipBlock:
+		      cidr: 169.254.169.254/32
+		...
+
+Secure Ingress
+	K8s creates a self-signed "fake" certificate by default for the 443 port
+
+	1) create certificate
+		can create own self-signed using `openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes` 
+
+	2) create secret
+		k create secret tls <secret_name> --cert=/path/to/tls_cert.pem --key=/path/to/tls_key.pem
+
+	3) update ingress yaml with tls options
+
+		...
+		spec:
+		  tls:
+		  - hosts:
+		      - secure-ingress.com
+		    secretName: secure-ingress
+		  rules:
+		  - host: secure-ingress.com
+		    http:
+		...
+
+	Note: ingress needs to be created in same namespace as its services
 
 
 Check Service Account Permissions
 	often the default service account is given too many rights
 		new pods will get default service account by default
+
+	namespaced
+	default SA used by pods
+
+	custom SA can be added to pod in spec:
+		...
+		spec:
+		  serviceAccountName: <SA_name>
+		  containers:
+		...
+
+	disable mounting of SA token in a pod if pod does not need to communicate with K8s (e.g. manage K8s as in the case of Operators)
+		in SA yaml add `automountServiceAccountToken: false`
+		can also include in spec: of pod
+			pod parameter will override SA parameter
+
+Secrets
+	Secrets in Running Container
+		As root from node (so, not an vuln per se, unless root creds to node leaked):
+			crictl inspect <container_id>
+				shows all environment variables
+				shows mounted secret locations in mounts
+				shows PID for further inspection
+			ps aux | grep <PID>
+			cat /proc/<PID>/root/path_to_mounted_secret
+
+	Secrets in etcd
+		ETCDCTL_API=3 etcdctl --cert /etc/kubernetes/pki/apiserver-etcd-client.crt --key /etc/kubernetes/pki/apiserver-etcd-client.key --cacert /etc/kubernetes/pki/etcd/ca.crt get /registry/secrets/<namespace>/<secret_name>
+
+		Encrypt etcd
+			Generate base64-encoded encryption password
+				echo -n "passwordpassword" | base64 	# password must be 16, 24, or 32 char
+
+			Create EncryptionConfiguration manifest in /etc/kubernetes/etcd (create dir if not present)
+				apiVersion: apiserver.config.k8s.io/v1
+				kind: EncryptionConfiguration
+				resources:
+				  - resources:
+				    - secrets
+				    providers: 	# 3rd party tools like kms & HashiCorp Vault are preferable to local aesgcm
+				    - aesgcm: 	# all new secrets will be AES encrypted
+				    	keys:
+				    	- name: <key_name>
+				    	  secret: <b64_encoded_encryption_secret> 		# must be 16, 24, or 32 char
+				    - identity: {} 		# required to read any secrets unencrypted or encrypted with providers not listed
+			
+			Add `--encryption-provider-config=/etc/kubernetes/etcd/<manifest_filename>.yaml` to apiserver config
+			
+			Add volume for manifest to apiserver config
+				...
+				volumes:
+				- hostPath:
+				    path: /etc/kubernetes/etcd
+				    type: DirectoryOrCreate
+				  name: etcd
+				- hostPath:
+				...
+			
+			Add volumeMount for manifest to apiserver config
+				...
+				- mountPath: /etc/kubernetes/etcd
+				  name: etcd
+				  readOnly: true
+				- mountPaths:
+				...
+			
+			Need to restart apiserver after any changes
+				cd /
+				mv /etc/kubernetes/manifests/kube-apiserver.yaml ..
+				ps aux | grep apiserver 	#check until apiserver no longer running
+				mv ../kube-apiserver.yaml /etc/kubernetes/manifests/kube-apiserver.yaml
+				check that `kubectl get nodes` works now
+			
+			Can replace all previous unencrypted secrets with encrypted secrets
+				kubectl get secrets -A -o json | kubectl replace -f -
+
+
 
 K8s Authentication
 	Inbuilt Authentication options
@@ -113,6 +444,8 @@ K8s Authentication
 	
 	NOTE: no user object will show up from kubectl api-resources
 			but users are understood by K8s RBAC for authorisation
+			a "user" is defined in the CN of a certificate signed by the K8s CA
+				a user is anyone who holds a valid cert and key
 
 	Basic/Token Auth
 		requires restart of API server to change
@@ -135,11 +468,11 @@ K8s Authentication
 
 		signed by main K8s CA
 		user and group encoded into cert (as "Subject=CN = username, O = groupname")
-		encoded into .kube/condfig files for user auth
+		encoded into .kube/config files for user auth
 		associate user with cert and test
 			kubectl config set-credentials username --client-certificate=/path/to/certs/mycert.crt --client-key=/path/to/keys/mykey.key --embed-certs=true
 			kubectl config set-context username@clustername --cluster=clustername --user=username
-			kubectx username@clustername		#kubectx changes context to user
+			kubectx username@clustername		#kubectx (https://github.com/ahmetb/kubectx) changes context to user
 			kubectl get pod 			#should fail (Forbidden) if user not given permissions
 		use cert with curl
 			curl -sk --cert mycert.crt --key mykey.key https://127.1:40000/api/...
@@ -156,6 +489,17 @@ K8s Authentication
 			/etc/kubernetes/admin.conf
 			can disable default cluster admin cert generation with setting during cluster creation
 		less risk in managed K8s - EKS, etc manages the CA key
+
+		Certificate Locations (on Control Plane node)
+			CA 							/etc/kubernetes/pki/ca.crt
+			API server 					/etc/kubernetes/pki/apiserver.crt
+			etcd server					/etc/kubernetes/pki/etcd/server.crt
+			Kubelet server				/var/lib/kubelet/pki/kubelet.crt
+			API -> etcd					/etc/kubernetes/pki/apiserver-etcd-client.crt
+			API -> Kubelet				/etc/kubernetes/pki/apiserver-kubelet-client.crt
+			Scheduler -> API			/etc/kubernetes/scheduler.conf
+			Controller-manager -> API	/etc/kubernetes/controller-manager.conf
+			Kubelet -> API				/etc/kubernetes/kubelet.conf -> /var/lib/kubelet/pki/kubelet-client-current.pem
 
 
 K8s Authorisation
@@ -301,6 +645,12 @@ Admission Controllers
 			restricts what pod security contexts can be configured
 	Additional controllers can be enabled from list from K8s
 
+	Security Contexts (within pod manifests)
+		define pod/container privilege and access control
+		userID (runAsUser), groupID (runAsGroup)
+		run privileged/unprivileged
+		Linux capabilities
+
 	3rd Party controllers
 		OPA Gatekeeper
 			policy-based control for resources (K8s and more)
@@ -314,6 +664,9 @@ Pod Security Policy
 		stop mounting files from node
 		stop use of other host resources (e.g. Node network)
 	enable policies in /etc/kubernetes/manifests/kube-apiserver.yaml
+		--enable-admission-plugins=NodeRestriction,PodSecurityPolicy
+		one or more PSPs must be defined
+		needs RBAC USE permission for podSecurityPolicy 
 		must have at least one policy, or PSP will block all pod creation
 	will likely need multiple policies
 		some workloads will require extra rights (e.g. kube-proxy)	
@@ -415,6 +768,199 @@ Pod Security Policy
 			/etc/kubernetes/manifests/kube-apiserver.yaml
 				enable-admission-plugins=PodSecurityPolicy 
 
+	OPA
+		open source policy engine (not K8s-specific)
+		Gatekeeper is OPA's admission controller for K8s
+			will only allow/deny new resource creation 
+			won't remove existing resources, but will note violations by existing resources
+				kubectl describe <constraint_type> <constraint>
+			all violation conditions must be true to trigger violation
+		uses ConstraintTemplates (creates new CRD) and Constraints (creates new CR from template)
+		can check rego syntax validity at https://play.openpolicyagent.org
+
+		ConstraintTemplate example
+			apiVersion: templates.gatekeeper.sh/v1beta1
+			kind: ConstraintTemplate
+			metadata:
+			  name: k8srequiredlabels
+			spec:
+			  crd:
+			    spec:
+			      names:
+			        kind: k8sRequiredLabels
+			      validation:	#Schema for the 'parameters' field
+			      	openAPIV3Schema:
+			      	  properties
+			      	    labels:
+			      	      type: array
+			      	      items: string
+			  targets:
+			  	- target: admission.k8s.gatekeeper.sh
+			  	  rego: |
+			  	    package k8srequiredlabels
+
+			  	    violation[{"msg": msg, "details": {"missing_labels": missing}}] {
+			  	      provided := {label | input.review.object.metadata.labels[label]} 
+			  	      required := {label | label := input.parameters.labels[_]} 
+			  	      missing := required - provided 
+			  	      count(missing) > 0
+			  	      msg := sprintf("you must provide labels: %v", [missing])
+			  	    }
+
+		Constraint example
+			apiVersion: templates.gatekeeper.sh/v1beta1
+			kind: k8sRequiredLabels
+			metadata:
+			  name: pods-must-have-cks		# pods must be labelled 'cks' to be allowed
+			spec:
+			  match:
+			    kinds:
+			      - apiGroups: [""]
+			      	kinds: ["Pod"]
+			  parameters:
+			    labels: ["cks"]
+
+
+
+mTLS
+	K8s CNI permits unencrypted pod-to-pod communication throughout cluster by default
+	service mesh proxy sidecars (Istio, linkerd)
+
+Regular Updates
+	First control plane components - apiserver, controller-manager, scheduler
+	Then worker components - kubelet, kube-proxy
+	All components should be 0-1 minor versions behind apiserver
+
+	Node Upgrade
+		kubectl drain <node_name>	# safely evict all pods from node & mark as SchedulingDisabled (sim kubectl cordon)
+		upgrade components (e.g. kubeadm, kubelet, kubectl)
+		kubectl uncordon <node_name>	# re-enable pod scheduling
+
+
+Container Runtime 
+	runc 
+		implements Open Container Initiative (OCI) open standard
+
+	Sandboxing prevents container from making syscalls to the kernel directly
+		more resources required - not good for syscall-heavy workloads
+		
+		katacontainers
+			each container runs in own VM
+		gVisor
+			Go-based kernel running in user-space
+			simulates kernel syscalls with limited functionality
+
+	RuntimeClass	
+		Install alternate runtime (e.g. gvisor)
+
+		Create runtimeClass
+			apiVersion: node.k8s.io/v1beta1
+			kind: RuntimeClass
+			metadata:
+			  name: gvisor
+			handler: runsc
+
+		Add runtimeClassName to pod spec 
+			...
+			spec:
+			  runtimeClassName: gvisor
+			  containers:
+			...
+
+
+Kernel Hardening
+	harden syscall interface
+		AppArmor
+		Seccomp
+
+	AppArmor
+		create profiles for each component (app/process) 
+			per-pod basis
+			put apparmor and profiles on all nodes 
+				may not know which node the pod will run on
+			found in /etc/apparmor.d/
+		profile modes
+			unconfined
+			complain - process continues but alerts (see syslogs)
+			enforce
+		install apparmor-utils to streamline management
+		verify apparmor profiles
+			ssh <node>
+			apparmor_status	 OR  aa-status
+		install profile manually
+			apparmor_parser </path/to/profile>
+		autogenerate profile
+			aa-genprof <process_name>
+		allow limited syscalls
+			aa-logprof
+			checks syslogs for attempted syscalls and adds them to profile
+
+		Docker
+			docker run --security-opt apparmor=<profile_name> <image_name>
+		K8s
+			add to pod's metadata annotations
+
+			...
+			metadata:
+			  annotations:
+				container.apparmor.security.beta.kubernetes.io/<container_name>: <profile_name>
+			  labels:
+			...
+
+	Seccomp
+		"secure computing mode" in Linux kernel 
+		will kill processes trying prohibited syscalls
+		often combined with BPF filters = seccomp-bpf
+		per-container basis from 1.19 onwards
+
+		pre-v1.19
+			add to pod's metadata annotations
+
+			...
+			metadata:
+			  annotations:
+				seccomp.security.alpha.kubernetes.io/<container_name>: <path/to/profile/file>
+			  labels:
+			...
+
+		v1.19+
+			add to pod's spec's securityContext
+
+			...
+			spec:
+			  securityContext:
+				seccompProfile:
+				  type: Localhost
+				  localhostProfile: /profiles/<profile_filename>
+			  containers:
+			...
+
+
+System Hardening
+
+	Host OS
+		nodes only running K8s components
+			remove unnecessary services
+		node recycling
+			nodes should be ephemeral
+			created from images
+			can be quickly recycled any time
+		minimalist Linux distros
+
+		open ports
+			netstat OR lsof
+		running services
+			systemctl
+		processes and users
+			ps
+			whoami
+			cat /etc/passwd
+
+	IAM Roles
+
+	Network Access
+
+
 Managed K8s
 	Security Concerns
 		Cloud Metadata Privesc
@@ -446,3 +992,241 @@ Helm
 		Tiller removed in Helm V3
 			makes use of Custom Resources (rights managed by RBAC) to store information
 
+Static Analysis of User Workloads
+	review source code and text files
+	check against rules
+		e.g. always define resource requests and limits; pods never use default ServiceAccount
+	enforce rules
+	anywhere in CI/CD pipeline, plus admission controller
+		Code -> Commit to Repo -> Build -> Test -> Deploy to K8s
+
+	kubesec tool - kubesec.io
+		fixed set of best practice rules
+
+		docker run -i kubesec/kubesec:512c5e0 scan /dev/stdin < <your_manifest>.yaml
+
+	OPA Conftest
+		unit test framework for Docker and K8s configs
+
+		Docker Conftest Example (from www.conftest.dev)
+			package main
+
+			denylist = [
+			  "ubuntu"
+			]
+
+			deny[msg] {
+			  input[i].Cmd == "from"
+			  val := input[i].Value
+			  contains(val[i], denylist[_])
+
+			  msg = sprintf("unallowed image found %s", [val])
+			}
+
+		K8s Conftest Example (from www.conftest.dev)
+			package main
+
+			deny[msg] {
+			  input.kind = "Deployment"
+			  not input.spec.template.spec.securityContext.runAsNonRoot = true
+			  msg = "Containers must not run as root"
+			}
+
+Software Supply Chain
+	private registry 
+		Create Secret
+			kubectl create secret docker-registry <secret_name> --docker-server=<private_registry_server> --docker-username=<username> --docker-password=<password> --docker-email=<email>
+		Add imagePullSecret for service account
+			kubectl patch serviceaccount default -p '{"imagePullSecrets": [{"name": "<secret_name>"}]}'
+	image digest 
+		...
+		spec:
+		  containers:
+			image: <registry_name>/<image_name>@sha256:<sha256_digest_hash>
+		...
+	OPA allowlisting registries
+		Example Template Allowlisting only images from Docker.io and GCR registries
+			apiVersion: templates.gatekeeper.sh/v1beta1
+			kind: ConstraintTemplate
+			metadata:
+			  name: k8strustedimages
+			spec:
+			  crd:
+			    spec:
+			      names:
+			        kind: K8sTrustedImages
+			  targets:
+			  	- target: admission.k8s.gatekeeper.sh
+			  	  rego: | 
+			  	  	package k8strustedimages
+
+			  	  	violation[{"msg": msg}] {
+			  	  	  image := imput.review.object.spec.containers[_].image
+			  	  	  not startswith(image, "docker.io/")
+			  	  	  not startswith(image, "k8s.gcr.io/")
+			  	  	  msg := "not trusted image!"
+			  	  	}
+
+		Example Constraint Allowlisting pods to be created from only images from Docker.io and GCR registries
+			apiVersion: constraints.gatekeeper.sh/v1beta1
+			kind: K8sTrustedImages
+			metadata:
+			  name: pod-trusted-images
+			spec:
+			  match:
+			    kinds:
+			      - apiGroups: [""]
+			        kinds: ["Pod"]
+
+	ImagePolicyWebhook Admission Controller (external service)
+		Requires admission_config, keys, and kubeconf for admission controller in /etc/kubernetes/admission
+			admission_config.yaml
+				apiVersion: apiserver.config.k8s.io/v1
+				kind: AdmissionConfiguration
+				plugins:
+				  - name: ImagePolicyWebhook
+				    configuration:
+				      imagePolicy:
+				        kubeConfigFile: /etc/kubernetes/admission/kubeconf
+				        allowTTL: 50
+				        denyTTL: 50
+				        retryBackoff: 500
+				        defaultAllow: false
+
+			kubeconf
+				apiVersion: v1
+				kind: Config
+				clusters:
+				- cluster:
+				    certificate-authority: /etc/kubernetes/admission/external-cert.pem # CA for verifying remote service
+				    server: https://<external_service>:<service_port>/<service_endpoint> # must be HTTPS
+				  name: image-checker
+				contexts:
+				- context:
+				    cluster: image-checker
+				    user: api-server
+				  name: image-checker
+				current-context: image-checker
+				preferences: {}	
+				users:
+				- name: api-server
+				  user:
+				    client-certificate: /etc/kubernetes/admission/apiserver-client-cert.pem
+				    client-key: /etc/kubernetes/admission/apiserver-client-key.pem
+
+		Modify kube-apiserver config 
+			...
+			- --admission-control-config-file=/etc/kubernetes/admission/admission_config.yaml
+			...
+			- --enable-admission-plugins=NodeRestriction,ImagePolicyWebhook
+			...
+			volumeMounts:
+			- mountPath: /etc/kubernetes/admission
+			  name: k8s-admission
+			  readOnly: true
+			...
+			volumes:
+			- hostPath:
+			    path: /etc/kubernetes/admission
+			    type: DirectoryOrCreate
+			  name: k8s-admission
+			...
+
+Auditing
+	API Request Stages 
+		RequestReceived - as soon as audit handler receives request, before delegated down handler chain
+		ResponseStarted - once response headers sent, before response body sent
+			only generated for long-running requests, like "watch"
+		ResponseComplete - response body has been completed, no more bytes sent
+		Panic 
+	Audit Policy Levels
+		None - don't log events matcing this rule
+		Metadata - log request metadata, but not request or response body
+		Request - log request metadata and body, but not response body
+			does not apply to non-resource requests
+		RequestResponse - log metadata, request and response bodies
+			does not apply to non-resource requests
+
+	Enable Auditing
+		Create audit folder
+			mkdir /etc/kubernetes/audit
+		Create policy file
+			vim /etc/kubernetes/audit/audit_policy.yaml
+			see example below
+		Modify kube-apiserver manifest
+			...
+			spec:
+			  containers:
+			  - command:
+			    - kube-apiserver
+				- --audit-policy-file=/etc/kubernetes/audit/audit_policy.yaml
+				- --audit-log-path=/etc/kubernetes/audit/logs/audit.log
+				- --audit-log-maxsize:500
+				- --audit-log-maxbackup:5
+			...
+			    volumeMounts:
+			    - mountPath: /etc/kubernetes/audit
+			      name: audit
+			...
+			  volumes:
+			  - hostPath:
+				  path: /etc/kubernetes/audit
+				  type:DirectoryOrCreate
+			    name: audit
+			...
+
+	Example Audit Policy
+		apiVersion: audit.k8s.io/v1
+		kind: Policy
+		# don't log RequestReceived stage of requests
+		omitStages:				
+		  - "RequestReceived"
+		rules:
+		# log no reading actions
+		- level: None
+		  verbs: ["get","watch","list"]
+		# log nothing regarding events
+		- level: None
+		  resources:
+		  - group: "" 
+		    resources: ["events"]
+		# log nothing coming from some groups
+		- level: None
+		  userGroups: ["system:nodes"]
+		# log metadata only for Secrets requests - does not reveal secrets in logs
+		- level: Metadata
+		  resources:
+		  - group: ""
+		    resources: ["secrets"]
+		# log metadata, requests, and responses for everything else
+		- level: ResponseRequest
+
+
+Behavioural Analytics
+	strace - lists syscalls carried out by a command
+		strace -cw 			provides summary of syscalls made 
+		strace -p <PID> 	traces syscalls for running process
+
+	/proc directory
+		communication interface with Linux kernel represented as files
+		/proc/<PID>
+		/proc/<PID>/fd 	list of all files opened by process
+			if etcd not encrypted, it may be possible to read secrets accessed by the process
+			cat /proc/<PID>/<file_number> | strings | grep -i secret -A20
+
+		cat /proc/<PID>/environ 	list all environment variables in the process
+
+	Falco
+		CNCF runtime security
+		ACCESS - deep kernel tracing built on the Linux kernel
+		ASSERT - describe security rules against a system (incl default ones)
+				 detect unwanted behaviour
+		ACTION - automated response to security violations
+
+		install on worker node 
+		outputs to syslog (/var/log/syslog) by default
+			cat /var/log/syslog | grep falco
+
+		rules at /etc/falco/
+			falco_rules.local.yaml will override falco_rules.yaml
+		

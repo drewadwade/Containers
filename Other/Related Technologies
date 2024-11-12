@@ -1,3 +1,12 @@
+CRI-O
+	cr8escape (CVE-2022-0811)
+		https://www.crowdstrike.com/blog/cr8escape-new-vulnerability-discovered-in-cri-o-container-engine-cve-2022-0811/
+		
+		CRI-O 1.19+	(check using `run crio -version`)
+		likely also affects: OpenShift 4+ and Oracle Container Engine for Kubernetes
+		
+
+
 gVisor (Google - gvisor.dev)
 	alternate container runtime
 		replaces runc component of the Docker stack (which runs the actual process)
@@ -69,6 +78,9 @@ Windows Containers
 		can expose on port 2375, but slightly less risk
 			can't do trivial breakout, can still mount host disk as volume
 
+	Container Breakouts
+		https://github.com/SafeBreach-Labs/CoWTools
+
 RedHat's OpenShift
 	"Enterprise Kubernetes"
 
@@ -106,6 +118,19 @@ RedHat's OpenShift
 
 K3s
 	lightweight Kubernetes from the people who made Rancher
+
+	Gather config parameters
+		check manifests in /var/lib/rancher/k3s/
+		OR
+		use `find / -name journal`
+			#likely /var/log/journal, but sometimes /run/log/journal
+		journalctl -D /var/log/journal -u k3s | grep 'Running kube-apiserver' 
+		journalctl -D /var/log/journal -u k3s | grep 'Managed etcd'
+		journalctl -D /var/log/journal -u k3s | grep 'Running kube-controller-manager'
+		journalctl -D /var/log/journal -u k3s | grep 'Running kube-scheduler'
+
+	CIS assessment
+		https://rancher.com/docs/k3s/latest/en/security/self_assessment/
 
 
 Support Lifecycles

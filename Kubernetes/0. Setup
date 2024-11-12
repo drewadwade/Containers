@@ -41,9 +41,21 @@ GKE
 		OR use GCP cloudshell
 
 	Get kubectl config file
+		gcloud auth login
+		(gcloud projects list)
+		(gcloud config set project <project_ID>)
 		gcloud container clusters get-credentials <cluster_name> --zone <GCP_Zone>
 
 	Connect to worker nodes
 		gcloud compute ssh <node_name> --zone <GCP_Zone>
 
 	https://cloud.google.com/sdk/docs/cheatsheetInspi
+
+
+
+AWS K8s
+	Initiate Connection
+		aws configure
+			provide Access Key ID, Secret Access Key, Region 
+		aws eks update-kubeconfig --name <EKS_resource_name> --profile <your_profile_name>
+

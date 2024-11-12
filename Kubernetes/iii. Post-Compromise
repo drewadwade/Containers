@@ -1,5 +1,87 @@
 What can I do currently?
-	kubectl can-i --list
+	kubectl auth can-i --list
+
+
+Dangerous RBAC Permissions
+	see https://www.paloaltonetworks.com/apps/pan/public/downloadResource?pagePath=/content/pan/en_US/resources/whitepapers/kubernetes-privilege-escalation-excessive-permissions-in-popular-platforms
+
+	rbac-police
+		https://github.com/PaloAltoNetworks/rbac-police
+		retrieves RBAC permissions and evaluates them using Rego policies
+
+		retrieve RBAC permissions
+			rbac-police collect 
+
+		evaluate RBAC permissions
+			rbac-police eval 
+
+		present RBAC permissions in human-friendly format
+			rbac-police expand 
+
+		options
+			--only-sa-on-all-nodes 
+				useful for identifying powerful DaemonSets
+			--namespace, --ignored-namespaces
+			--severity-threshold 
+				set policy severity threshold
+
+	Manipulate AuthN/Z
+		impersonate
+		escalate
+		bind
+		approve signers 	- not enough on its own
+		update certificatesigningrequests/approval - not enough on its own
+		control mutating webhooks
+	Acquire Tokens
+		list secrets
+		create secrets
+		create serviceaccounts/ token
+		create pods
+		control pod controllers
+		control validating webhooks
+		control mutating webhooks
+	RCE
+		create pods/exec
+		update pods/ephemeralcontainers
+		create nodes/proxy
+		control pods
+		control pod controllers
+		control mutating webhooks
+	Steal Pods
+		modify nodes
+		modify nodes/status - not enough on its own
+		create pods/eviction - not enough on its own
+		delete pods - not enough on its own
+		delete nodes - not enough on its own
+		modify pods/status - not enough on its own
+		modify pods - not enough on its own
+	MitM
+		control endpointslices
+		modify endpoints
+		modify services/status
+		modify pods
+		create services
+		control mutating webhooks
+
+Powerful Default Daemonsets
+	AKS
+		cloud-node-manager, csi-azurefile-*
+			list secrets, update nodes
+	EKS
+		aws-node
+			update nodes
+	GKE (only with Dataplane v2)
+		anetd
+			update nodes, update pods
+	OCP
+		machine-config, sdn, multus-*
+			create pods, update validatingwebhook- configurations
+	Antrea
+		antrea-agent
+			patch nodes, patch pods, update services, update services/status
+	Cilium
+		cilium
+			update nodes, update pods, delete pods
 
 
 Look for Cluster CA key
@@ -37,7 +119,7 @@ Access to cluserrole-aggregation-controller secret
 		get "token" field from secret and b64 decode it to get JWT token
 
 		assign JWT to variable for ease of use
-			TOKEN='<decoded_JWT_token'
+			TOKEN='<decoded_JWT_token>'
 
 		kubectl --token=$TOKEN get clusterroles
 
@@ -73,27 +155,22 @@ Find secrets with access to etcd database (or backup)
 		strings db | grep -B 1 -A 1 "service-account-token"
 
 
-
-
 Cloud Metadata Services
 	AWS/Azure 
 		curl http://169.254.169.254/
 	GCP 
 		curl https://metadata.google.internal
+		curl http://169.254.169.254/
 	
 	possible breakout
 		access to IAM tokens
 			not easy to block access from EC2 or K8s
 				K8s may be provided with excessive permissions to manage EC2 for autoscaling
+					resolved in AWS with IRSA (IAM Roles for Service Accounts)
 			curl http://169.254.169.254/latest/meta-data/iam/security-credentials
 			curl http://169.254.169.254/latest/meta-data/iam/security-credentials/<role>
 		access to K8s tokens
 
-Allowing pod creation leads to privesc through various routes
-	can create privileged Docker containers and breakout to node
-	risks even with PSP enabled
-
-Check for impersonation rights 
 
 Check .bash_history
 
@@ -386,9 +463,22 @@ ready-to-use manifests for different permissions/resources/directions
 
 
 Misc Container Breakouts
+	Linux Kernel Before v5.15
+		https://www.crowdstrike.com/blog/exploiting-cve-2021-3490-for-container-escapes/
+
+	If you have CAP_SYS_ADMIN (or ability to run `unshare -r` to get full capabilities in other namespace)
+		https://blog.aquasec.com/cve-2022-0185-linux-kernel-container-escape-in-kubernetes
+
+		if your application runs perfectly well as a non-root user, it should run fine in a container without any capabilities. In those cases, you can just drop all capabilities and it should work fine.
+
+	If you have CAP_DAC_OVERRIDE and CAP_DAC_READ_SEARCH in a privileged container, run https://github.com/gabrtv/shocker/blob/master/shocker.c to break out to the node
+
 	https://tbhaxor.com/container-breakout-part-1/
 	https://tbhaxor.com/container-breakout-part-2/
 
+	Dirty Pipe (CVE-2022-0847) break out from underprivileged container
+		https://github.com/DataDog/dirtypipe-container-breakout-poc
+		tested on a Kernel 5.10.0-0 with runc 1.0.2 on Kubernetes 1.22.7, but should work on any vulnerable kernel.
 
 
 port-forwarding
@@ -409,7 +499,7 @@ Run any Helm Chart using Tiller and gain node root access
 		helm --host tiller-deploy.kube-system.svc.cluster.local:44134 version
 		helm --host tiller-deploy.kube-system.svc.cluster.local:44134 ls
 
-AWS K8s
+AKS
 
 	Check for permission & priv esc
 	
@@ -439,3 +529,12 @@ AWS K8s
 		retrieve tokens:
 			TOKEN=`curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600"` && curl -H "X
 			-aws-ec2-metadata-token: $TOKEN" -v http://169.254.169.254/latest/meta-data/
+
+Enumerate service IPs from within container - k8s <= v1.25
+	dig @10.96.0.10 any.any.svc.cluster.local
+
+
+Bypassing image vulnerability scanners
+	https://raesene.github.io/blog/2023/04/22/Fun-with-container-images-Bypassing-vulnerability-scanners/
+	
+	https://github.com/bgeesaman/malicious-compliance

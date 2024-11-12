@@ -19,3 +19,6 @@ Jaeger
 Fluentd
 	often no authentication on its services (web portals) 
 	can read and write logs
+
+Istio
+	https://www.praetorian.com/blog/introducing-snowcat/

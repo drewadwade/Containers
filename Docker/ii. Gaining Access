@@ -25,7 +25,7 @@ Mount a bound volume
 	docker volume create volume_name
   	docker run -v volume_name:/container_dir <image_name>
  		will also create volume of that name, if not already existing
-  	 docker volume inspect volume_name
+  	docker volume inspect volume_name
   	 	will show /var/lib/docker/volume/volume_name/_data
 
 Copy from/to container
@@ -34,13 +34,18 @@ Copy from/to container
 can override Dockerfile ENTRYPOINT to get shell
 	docker run --entrypoint=/bin/ash -it <image_name>
 
+CAP_DAC_OVERRIDE and CAP_DAC_READ_SEARCH in a privileged container
+	run https://github.com/gabrtv/shocker/blob/master/shocker.c to break out to the node
+
 cap_net_raw can allow for ARP spoofing and MITM - see blog.champtar.fr
+	ping may no longer require cap_net_raw - “ping_group_range” feature allows a Linux system to define a range of groups that can send ICMP echo requests without privileges
 
 capabilities can be used to hide privileged binaries 
 	we would usually note anything with SETUID running as root
 	that would not find processes running with CAP_SYS_ADMIN (essentially root)
 		can detect using filecap tool to audit for files with dangerous capabilities
 			filecap <directory>
+	if your application runs perfectly well as a non-root user, it should run fine in a container without any capabilities. In those cases, you can just drop all capabilities and it should work fine.
 
 create a privileged container from an image using Docker daemon
 	curl -X POST "http://<IP_address>:2375/images/create?fromImage=<image_name>&tag=<image_tag>"

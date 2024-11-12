@@ -22,7 +22,7 @@ Use the --no-new-privileges flag on all containers or at the daemon level
 CAP_NET_RAW capability should be dropped unless container needs access to raw network traffic
 	there are work-arounds for allowing Ping, if necessary
 
-If it can, the container shoudl be run with no capabilities at all
+If it can, the container should be run with no capabilities at all
 
 Set resource limits
 	cgroups should be set (K8s does this by default) to reduce DoS risks
@@ -127,7 +127,7 @@ Docker Images
 		not recommended
 
 	Use ENTRYPOINT over CMD for single purpose containers that should only run that command
-		can override ENTRYPOINT - e.g. to get shell
+		can override ENTRYPOINT when starting container using --entrypoint flag   - e.g. to get shell
 
 	Use the USER tag (USER <username>) to assign a lower-priv user (containers run as root by default)
 		all subsequent commands will run as this user

@@ -25,6 +25,9 @@ Query unauthenticated Docker Daemon API
 List capabilities within a container
 	capsh --print
 
+	if your application runs perfectly well as a non-root user, it should run fine in a container without any capabilities. In those cases, you can just drop all capabilities and it should work fine.
+
+
 
 Local access to Docker socket
 	access to an account in the docker group would be most likely means of access
@@ -108,6 +111,9 @@ Reversing Dockerfiles
 query container parameters (e.g. IP)
 	docker inspect -f "{{ .NetworkSettings.IPAddress }}" <container_name>
 
+	nsenter --target <PID_of_container> -n ip addr
+		doesn't need ip command on container, just on host
+
 Listen for events (create/delete/etc) on containerd
 	ctr --address /var/run/containerd/containerd.sock events
 
@@ -136,7 +142,7 @@ mnt namespace
 	be careful of permissions (UID inside container may not be same as UID outside container)
 
 user namespace
-	will break things in K8s - recommend for high sec in pure Docker
+	will break things in K8s - recommend for high security in pure Docker
 
 missing flag to prevent container gaining additional privileges allows privesc
 	docker run --security-opt:no-new-privileges:true <image_name>
@@ -159,3 +165,7 @@ Scanning Docker containers for vulnerabilities
 		clair-scanner --clair="http://172.17.10.117:6060" --ip="172.17.10.117" <pulled_image_to_scan>
 	trivy
 
+
+Leaky Vessels - runc <1.1.12
+	https://github.com/snyk/leaky-vessels-static-detector
+	https://github.com/snyk/leaky-vessels-dynamic-detector
