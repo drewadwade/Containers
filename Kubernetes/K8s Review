@@ -1,0 +1,146 @@
+Review API resources
+	k api-resources
+
+Review Network Policies
+	k get netpol -A
+	k get netpol <policy_name> -n <namespace> -o yaml
+
+
+Query Secure Port
+	kubectl -s http://<node_IP>:8443 <command>
+	OR
+	curl -k https://<node_IP>:8443/api/v1/namespaces   
+
+Query Insecure Port
+	kubectl -s http://<node_IP>:8080 <command>
+
+Query unauthenticated rw kubelet API
+	curl https://<node_IP>:10250/pods -k | jq
+	
+Query unauthenticated ro kubelet API
+	curl http://<node_IP>:10255/pods -k | jq
+		run and exec endpoints will return 405
+
+
+Review file permissions
+	CIS section 1.1
+
+	Get etcd data directory
+		ps -ef | grep etcd
+		stat -c %a /var/lib/etcd
+			should be 700 or more restrictive
+
+API Server config
+	ps -ef | grep kube-apiserver
+
+	CIS section 1.2
+
+
+Review Admission Controller
+
+	ps -ef | grep kube-apiserver
+		check --enable-admission-plugin parameters for PodSecurity
+
+	check each namespace for policies allowing
+		privileged
+ 		allowPrivilegeEscalation
+ 		runAsRoot (or no runAsUser/runAsGroup/runAsNonRoot)
+		Added Capabilities
+			NET_RAW, SYS_ADMIN, etc
+		hostPath volumes
+		hostPorts
+		ReadOnlyRootFilesystem
+		spec.hostIPC
+		spec.hostNetwork
+		image provenance
+		securityContext.windowsOptions.hostProcess (Windows containers only)
+
+
+	Review validatingwebhookconfigurations and mutatingwebhookconfigurations
+		k get validatingwebhookconfigurations
+		k get validatingwebhookconfigurations <name> -o yaml
+		k get mutatingwebhookconfigurations
+		k get mutatingwebhookconfigurations <name> -o yaml
+
+		Check caBundle:
+
+			Red flags:
+				Missing caBundle
+				Empty or null bundle
+				Extremely short cert expirations (misconfigured operator)
+				WebhookService with no proper TLS secret
+	
+		Check API groups and resources it intercepts:
+
+			Wide-scope webhooks are a security concern unless they’re from a trusted system (e.g., Gatekeeper, Kyverno).
+			
+			rules:
+			- apiGroups: ["*"]
+			  resources: ["*"]
+			  operations: ["CREATE","UPDATE","DELETE"]
+
+		Check failurePolicy:
+
+			Fail	
+				Reject request if webhook is down	
+				Secure (prevents bypass)
+			Ignore	
+				Allow request if webhook is down	
+				High risk (bypassable)
+		
+			FailAfterDryRun	
+				Newer option; safer than Ignore	
+				Medium risk
+
+		Check sideEffects:
+			Should be: "sideEffects: None"
+			If it's "Unknown" or missing → possible API instability.
+
+		Check admissionReviewVersions:
+			Should include "v1".
+			If only "v1beta1" → indicates outdated / potentially vulnerable webhook.
+
+
+API Server Audit Logs
+	ps -ef | grep kube-apiserver
+
+	Ensure --audit-log-path is set
+	Ensure some reasonable combination of --audit-log-maxage (default 0, never deleted), --audit-log-maxbackup (default 0, old log deleted when maxsize reached), and/or --audit-log-maxsize (default 100MB) are set to retain logs for DFIR
+
+
+RBAC
+
+	offline-cluster-analyser.rb
+
+		LIST but not GET Secrets
+
+		Roles with Cluster-wide GET Secrets
+			focus on non-default ones
+
+		Service Accounts with Cluster Admin
+			kubectl get clusterrolebinding -o jsonpath='{range .items[?(@.roleRef.name=="cluster-admin")]}{.metadata.name}{"\t"}{range .subjects[*]}{.kind}{"\t"}{.namespace}{"\t"}{.name}{"\n"}{end}{end}'
+
+		Unnecessary privileges
+			CREATE pods
+
+Pod Security Contexts
+	
+	offline-cluster-analyser.rb
+
+		Review Security Contexts
+			privileged
+			privesc
+			runAsRoot
+			Add Capabilities
+			ReadOnlyRootFilesystem
+			seccompProfile
+
+Service Accounts
+	Check for default SA with token automounted
+		kubectl get sa -A -o jsonpath='{range .items[*]}{.metadata.namespace}{"\t"}{.metadata.name}{"\t"}{.automountServiceAccountToken}{"\n"}{end}' | grep -v false | grep default
+
+
+Helm
+
+Prometheus
+

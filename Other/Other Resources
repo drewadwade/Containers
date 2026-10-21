@@ -3,6 +3,22 @@ Other Resources
 Overwriting core K8s CRDs
 	https://raesene.github.io/blog/2021/11/01/fun-with-CRDs/
 
+ArgoCD
+	ArgoCD Administrator account, after the initial creation of ArgoCD should be disabled and never be in use. 
+
+	k get cm -A | grep argo
+	k describe cm <cm_name> -n <namespace_probably_argocd>
+	look for admin.enabled: "true"
+
+	Simply add admin.enabled: "false" to the argo-cm ConfigMap, to disable the ArgoCD Administrator
+
+Grafana
+	Check Grafana Version
+	=====================
+	k get deployments -A | grep grafana 
+	k get deployment -n <namespace> <deployment_name> -o yaml | grep grafana
+
+
 Prometheus
 	no authentication on its services (web portals) - by design
 	injects several PROMETHEUS environment variables into every pod 
@@ -21,4 +37,77 @@ Fluentd
 	can read and write logs
 
 Istio
+	Istio uses iptables and allows traffic from UID 1337 (Istio's own id)
+
 	https://www.praetorian.com/blog/introducing-snowcat/
+
+Hashicorp Vault
+	https://joshua.hu/hashicorp-vault-secret-dumping
+
+Kubernetes Image Builder
+	versions < v0.1.45
+	https://github.com/kubernetes/kubernetes/issues/133115
+
+
+Nginx Ingress Controller
+
+	IngressNightmare - relies on the following issues
+		The ingress controller routes ingress traffic to Kubernetes services and their pods. The admission controller is supposed to validate ingress objects before they are deployed. The public exposure of the webhook endpoint is a Low on its own, but by default, the nginx ingress admission controllers are accessible don't require authentication. Again, a relatively low risk unless the admission controller is vulnerable.
+		 
+		If it is vulnerable, you can upload a malicious shared library to the admission controller pod, then send an AdmissionReview request causing NGINX to load the previously uploaded shared library and execute code in the library.
+		 
+		With no cluster access check:
+			- the admission controller is exposed on a public IP (port 8443 by default) - internal exposure is less risky, but not ideal as it can lead to privesc here
+			- you can trigger the admission webhook without authentication - get response 200
+			 
+			If ingress-nginx is a vulnerable version (<v1.11.0, v1.11.0 - 1.11.4, v1.12.0), as indicated by the response from:
+				Server header in the API responses that indicates the ngnix version
+
+		With cluster access check: 
+
+			ingress-nginx is in use in the cluster
+				kubectl get pods --all-namespaces --selector app.kubernetes.io/name=ingress-nginx
+			
+			vulnerable version
+				kubectl get pods --selector app.kubernetes.io/name=ingress-nginx --selector app.kubernetes.io/component=controller -A -o yaml | grep image:
+
+		If it's a vulnerable version, it's misconfigured for:
+		 
+		- no unrestricted client headers
+		- no auth
+		- default annotations
+		 
+		then you may be able to send a JSON payload that bypasses the admission filter and gives command injection or RCE when the webhook server interprets headers in a malicious way.
+		 
+		If you've got an ingress URL (i.e. the IP/URL for one of the services/microservices running on K8s - maybe the main IP for the app?) as well as the admission webhook URL - try reverse shell PoC: https://github.com/hakaioffsec/IngressNightmare-PoC
+
+		https://github.com/kubernetes/kubernetes/issues/131008
+			where the `mirror-target` and `mirror-host` Ingress annotations can be used to inject arbitrary configuration into nginx. This can lead to arbitrary code execution in the context of the ingress-nginx controller, and disclosure of Secrets accessible to the controller. (Note that in the default installation, the controller can access all Secrets cluster-wide.)
+
+			`kubectl get pods --all-namespaces --selector app.kubernetes.io/name=ingress-nginx`
+
+		https://github.com/kubernetes/kubernetes/issues/131007
+			where the `auth-tls-match-cn` Ingress annotation can be used to inject configuration into nginx. This can lead to arbitrary code execution in the context of the ingress-nginx controller, and disclosure of Secrets accessible to the controller. (Note that in the default installation, the controller can access all Secrets cluster-wide.)
+
+			`kubectl get pods --all-namespaces --selector app.kubernetes.io/name=ingress-nginx`
+
+		https://github.com/kubernetes/kubernetes/issues/131006
+			where the `auth-url` Ingress annotation can be used to inject configuration into nginx. This can lead to arbitrary code execution in the context of the ingress-nginx controller, and disclosure of Secrets accessible to the controller. (Note that in the default installation, the controller can access all Secrets cluster-wide.)
+			Affected Versions: < v1.11.0, v1.11.0 - 1.11.4, v1.12.0
+
+			`kubectl get pods --all-namespaces --selector app.kubernetes.io/name=ingress-nginx`
+
+			does not affect you if you have the `enable-annotation-validation` CLI argument enabled -  enabled by default starting from ingress-nginx v1.12.0
+
+		https://github.com/kubernetes/kubernetes/issues/131005
+			where attacker-provided data are included in a filename by the ingress-nginx Admission Controller feature, resulting in directory traversal within the container. This could result in denial of service, or when combined with other vulnerabilities, limited disclosure of Secret objects from the cluster.
+			Affected Versions: < v1.11.0, v1.11.0 - 1.11.4, v1.12.0
+
+			`kubectl get pods --all-namespaces --selector app.kubernetes.io/name=ingress-nginx`
+
+		https://github.com/kubernetes/kubernetes/issues/126744
+			an actor with permission to create Ingress objects (in the networking.k8s.io or extensions API group) can bypass annotation validation to inject arbitrary commands and obtain the credentials of the ingress-nginx controller
+
+			default configuration - that credential has access to all secrets in the cluster
+
+			Review Kubernetes audit logs for Ingress objects created with annotations (e.g. nginx.ingress.kubernetes.io/auth-tls-verify-client) that contain carriage returns (\r).

